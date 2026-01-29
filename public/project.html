@@ -1,0 +1,339 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Проект ремонта | Просмотр</title>
+  <link rel="stylesheet" href="/css/styles.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+</head>
+<body>
+  <div class="project-view-container">
+    <!-- Loading state -->
+    <div id="loadingState" class="text-center" style="padding: 60px 20px;">
+      <p>Загрузка проекта...</p>
+    </div>
+
+    <!-- Error state -->
+    <div id="errorState" class="hidden text-center" style="padding: 60px 20px;">
+      <h2>Проект не найден</h2>
+      <p class="text-muted">Возможно, ссылка устарела или проект был удалён.</p>
+      <a href="/" class="btn btn-primary" style="margin-top: 20px;">Создать новый проект</a>
+    </div>
+
+    <!-- Project content -->
+    <div id="projectContent" class="hidden">
+      <!-- Header -->
+      <div class="admin-header">
+        <div>
+          <h1 id="projectName">Проект ремонта</h1>
+          <p id="projectDate" class="text-muted"></p>
+        </div>
+        <div>
+          <a href="/" class="btn btn-secondary">Создать свой проект</a>
+        </div>
+      </div>
+
+      <!-- Summary Card -->
+      <div class="project-summary">
+        <div style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 20px;">
+          <div>
+            <h2>Общая стоимость</h2>
+            <div id="projectTotal" class="project-total">0 ₽</div>
+          </div>
+          <div style="text-align: right;">
+            <p><strong>Комнат:</strong> <span id="roomCount">0</span></p>
+            <p><strong>Площадь:</strong> <span id="totalArea">0</span> м²</p>
+          </div>
+        </div>
+
+        <div style="margin-top: 20px; display: flex; gap: 12px; flex-wrap: wrap;">
+          <a id="downloadExcelBtn" href="#" class="btn btn-primary">Скачать смету (Excel)</a>
+          <button id="editProjectBtn" class="btn btn-secondary">Редактировать проект</button>
+        </div>
+      </div>
+
+      <!-- 3D Preview -->
+      <div class="admin-card">
+        <div class="admin-card-header">
+          <h2>3D Просмотр</h2>
+          <div>
+            <select id="roomSelector" class="form-control" style="width: auto; display: inline-block;">
+              <!-- Room options will be added here -->
+            </select>
+          </div>
+        </div>
+        <div class="admin-card-body" style="padding: 0;">
+          <div id="viewer3d" style="height: 350px; background: linear-gradient(135deg, #e0e7ff 0%, #f0f9ff 100%);"></div>
+        </div>
+      </div>
+
+      <!-- Room Details -->
+      <div id="roomsContainer">
+        <!-- Room details will be inserted here -->
+      </div>
+
+      <!-- Chat History (if any) -->
+      <div id="chatHistorySection" class="admin-card hidden">
+        <div class="admin-card-header">
+          <h2>История чата</h2>
+        </div>
+        <div class="admin-card-body">
+          <div id="chatHistoryContent" style="max-height: 400px; overflow-y: auto;">
+            <!-- Chat messages will be inserted here -->
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="/js/room3d.js"></script>
+  <script>
+    // State
+    let project = null;
+    let pricingOptions = {};
+    let viewer3d = null;
+
+    // Category names
+    const categoryNames = {
+      walls: 'Стены',
+      floors: 'Полы',
+      ceiling: 'Потолок',
+      electrical: 'Электрика',
+      plumbing: 'Сантехника'
+    };
+
+    /**
+     * Initialize page
+     */
+    async function init() {
+      // Get project ID from URL
+      const pathMatch = window.location.pathname.match(/\/project\/([a-zA-Z0-9-]+)/);
+      if (!pathMatch) {
+        showError();
+        return;
+      }
+
+      const projectId = pathMatch[1];
+
+      try {
+        // Load pricing options
+        const pricingResponse = await fetch('/api/pricing');
+        const pricingData = await pricingResponse.json();
+        if (pricingData.success) {
+          pricingData.options.forEach(opt => {
+            pricingOptions[opt.name_key] = opt;
+          });
+        }
+
+        // Load project
+        const response = await fetch(`/api/projects/${projectId}`);
+        const data = await response.json();
+
+        if (data.success) {
+          project = data.project;
+          renderProject();
+          renderChatHistory(data.chatHistory);
+
+          // Setup Excel download link
+          document.getElementById('downloadExcelBtn').href = `/api/export/${projectId}`;
+
+          // Setup edit button
+          document.getElementById('editProjectBtn').addEventListener('click', () => {
+            window.location.href = `/project/${projectId}`;
+          });
+        } else {
+          showError();
+        }
+      } catch (error) {
+        console.error('Error loading project:', error);
+        showError();
+      }
+    }
+
+    /**
+     * Show error state
+     */
+    function showError() {
+      document.getElementById('loadingState').classList.add('hidden');
+      document.getElementById('errorState').classList.remove('hidden');
+    }
+
+    /**
+     * Render project data
+     */
+    function renderProject() {
+      document.getElementById('loadingState').classList.add('hidden');
+      document.getElementById('projectContent').classList.remove('hidden');
+
+      // Basic info
+      document.getElementById('projectName').textContent = project.name;
+      document.getElementById('projectDate').textContent = `Создан: ${new Date(project.created_at).toLocaleDateString('ru-RU')}`;
+      document.getElementById('projectTotal').textContent = `${project.total_cost.toLocaleString('ru-RU')} ₽`;
+      document.getElementById('roomCount').textContent = project.rooms.length;
+
+      // Calculate total area
+      const totalArea = project.rooms.reduce((sum, room) => sum + (room.width * room.length), 0);
+      document.getElementById('totalArea').textContent = totalArea.toFixed(1);
+
+      // Room selector
+      const roomSelector = document.getElementById('roomSelector');
+      roomSelector.innerHTML = '';
+      project.rooms.forEach((room, index) => {
+        const option = document.createElement('option');
+        option.value = index;
+        option.textContent = `${room.name} (${(room.width * room.length).toFixed(1)} м²)`;
+        roomSelector.appendChild(option);
+      });
+
+      roomSelector.addEventListener('change', (e) => {
+        const index = parseInt(e.target.value);
+        if (viewer3d && project.rooms[index]) {
+          viewer3d.createRoom(project.rooms[index]);
+        }
+      });
+
+      // Initialize 3D viewer
+      viewer3d = new Room3DViewer('viewer3d');
+      if (project.rooms.length > 0) {
+        viewer3d.createRoom(project.rooms[0]);
+      }
+
+      // Render room details
+      renderRoomDetails();
+    }
+
+    /**
+     * Render room details with pricing breakdown
+     */
+    function renderRoomDetails() {
+      const container = document.getElementById('roomsContainer');
+      container.innerHTML = '';
+
+      project.rooms.forEach((room, index) => {
+        const floorArea = room.width * room.length;
+        const wallArea = 2 * room.height * (room.width + room.length);
+        const ceilingArea = floorArea;
+
+        const roomOptions = project.selected_options[index] || {};
+
+        // Calculate room cost and breakdown
+        let roomCost = 0;
+        const breakdown = [];
+
+        Object.entries(roomOptions).forEach(([optionKey, selected]) => {
+          if (selected && pricingOptions[optionKey]) {
+            const option = pricingOptions[optionKey];
+            let area = floorArea;
+
+            if (option.category === 'walls') area = wallArea;
+            else if (option.category === 'ceiling') area = ceilingArea;
+            else if (option.category === 'electrical' || option.category === 'plumbing') area = 1;
+
+            const cost = Math.round(area * option.price_per_sqm);
+            roomCost += cost;
+
+            breakdown.push({
+              category: option.category,
+              name: option.name_ru,
+              area: area,
+              unit: option.unit,
+              price: option.price_per_sqm,
+              cost: cost
+            });
+          }
+        });
+
+        // Create room card
+        const card = document.createElement('div');
+        card.className = 'room-details';
+        card.innerHTML = `
+          <div class="room-detail-header">
+            <h3>${room.name}</h3>
+            <span>${room.width}м × ${room.length}м × ${room.height}м</span>
+          </div>
+          <div class="room-detail-body">
+            <div style="display: flex; gap: 20px; margin-bottom: 16px; flex-wrap: wrap;">
+              <div>
+                <span class="text-muted">Площадь пола:</span>
+                <strong>${floorArea.toFixed(1)} м²</strong>
+              </div>
+              <div>
+                <span class="text-muted">Площадь стен:</span>
+                <strong>${wallArea.toFixed(1)} м²</strong>
+              </div>
+              <div>
+                <span class="text-muted">Стоимость комнаты:</span>
+                <strong style="color: var(--primary-color);">${roomCost.toLocaleString('ru-RU')} ₽</strong>
+              </div>
+            </div>
+
+            ${breakdown.length > 0 ? `
+              <h4 style="margin-bottom: 12px;">Выбранные работы:</h4>
+              <table class="pricing-table">
+                <thead>
+                  <tr>
+                    <th>Работа</th>
+                    <th>Площадь</th>
+                    <th>Цена</th>
+                    <th>Стоимость</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${breakdown.map(item => `
+                    <tr>
+                      <td>
+                        <span class="text-muted" style="font-size: 0.8rem;">${categoryNames[item.category]}</span><br>
+                        ${item.name}
+                      </td>
+                      <td>${item.area.toFixed(1)} ${item.unit}</td>
+                      <td>${item.price} ₽/${item.unit}</td>
+                      <td><strong>${item.cost.toLocaleString('ru-RU')} ₽</strong></td>
+                    </tr>
+                  `).join('')}
+                </tbody>
+              </table>
+            ` : '<p class="text-muted">Работы не выбраны</p>'}
+          </div>
+        `;
+
+        container.appendChild(card);
+      });
+    }
+
+    /**
+     * Render chat history
+     */
+    function renderChatHistory(chatHistory) {
+      if (!chatHistory || chatHistory.length === 0) return;
+
+      const section = document.getElementById('chatHistorySection');
+      const content = document.getElementById('chatHistoryContent');
+
+      section.classList.remove('hidden');
+      content.innerHTML = '';
+
+      chatHistory.forEach(msg => {
+        const messageEl = document.createElement('div');
+        messageEl.className = `chat-message ${msg.role}`;
+        messageEl.style.marginBottom = '12px';
+        messageEl.innerHTML = `<p>${escapeHtml(msg.message)}</p>`;
+        content.appendChild(messageEl);
+      });
+    }
+
+    /**
+     * Escape HTML to prevent XSS
+     */
+    function escapeHtml(text) {
+      const div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
+    }
+
+    // Initialize on page load
+    document.addEventListener('DOMContentLoaded', init);
+  </script>
+</body>
+</html>

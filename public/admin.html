@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Админ-панель | Калькулятор ремонта</title>
+  <link rel="stylesheet" href="/css/styles.css">
+</head>
+<body>
+  <div class="admin-container">
+    <!-- Login Form (shown when not authenticated) -->
+    <div id="loginSection" class="login-form">
+      <div class="admin-card">
+        <div class="admin-card-header">
+          <h2>Вход в админ-панель</h2>
+        </div>
+        <div class="admin-card-body">
+          <div class="form-group">
+            <label for="adminPassword">Пароль</label>
+            <input type="password" id="adminPassword" class="form-control" placeholder="Введите пароль">
+          </div>
+          <button id="loginBtn" class="btn btn-primary" style="width: 100%; margin-top: 16px;">Войти</button>
+          <p id="loginError" class="text-muted" style="margin-top: 12px; color: var(--danger-color); display: none;">Неверный пароль</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Admin Panel (shown after authentication) -->
+    <div id="adminPanel" class="hidden">
+      <!-- Header -->
+      <div class="admin-header">
+        <h1>Админ-панель</h1>
+        <div>
+          <a href="/" class="btn btn-secondary">На главную</a>
+          <button id="logoutBtn" class="btn btn-secondary">Выйти</button>
+        </div>
+      </div>
+
+      <!-- Pricing Management -->
+      <div class="admin-card">
+        <div class="admin-card-header">
+          <h2>Управление ценами</h2>
+        </div>
+        <div class="admin-card-body">
+          <p class="text-muted" style="margin-bottom: 16px;">Изменяйте цены за работу. Цены указаны в рублях.</p>
+
+          <div style="overflow-x: auto;">
+            <table class="pricing-table" id="pricingTable">
+              <thead>
+                <tr>
+                  <th>Услуга</th>
+                  <th>Цена за ед.</th>
+                  <th>Единица</th>
+                  <th>Активно</th>
+                  <th>Действие</th>
+                </tr>
+              </thead>
+              <tbody id="pricingTableBody">
+                <!-- Pricing rows will be inserted here -->
+              </tbody>
+            </table>
+          </div>
+
+          <button id="saveAllPricingBtn" class="btn btn-primary" style="margin-top: 16px;">Сохранить все изменения</button>
+        </div>
+      </div>
+
+      <!-- Add New Option -->
+      <div class="admin-card">
+        <div class="admin-card-header">
+          <h2>Добавить новую услугу</h2>
+        </div>
+        <div class="admin-card-body">
+          <div class="form-row">
+            <div class="form-group">
+              <label for="newCategory">Категория</label>
+              <select id="newCategory" class="form-control">
+                <option value="walls">Стены</option>
+                <option value="floors">Полы</option>
+                <option value="ceiling">Потолок</option>
+                <option value="electrical">Электрика</option>
+                <option value="plumbing">Сантехника</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label for="newNameRu">Название (рус)</label>
+              <input type="text" id="newNameRu" class="form-control" placeholder="Например: Укладка паркета">
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label for="newNameKey">Ключ (англ)</label>
+              <input type="text" id="newNameKey" class="form-control" placeholder="Например: parquet">
+            </div>
+            <div class="form-group">
+              <label for="newPrice">Цена</label>
+              <input type="number" id="newPrice" class="form-control" placeholder="1500">
+            </div>
+            <div class="form-group">
+              <label for="newUnit">Единица</label>
+              <input type="text" id="newUnit" class="form-control" value="м²">
+            </div>
+          </div>
+          <div class="form-group">
+            <label for="newDescription">Описание</label>
+            <input type="text" id="newDescription" class="form-control" placeholder="Описание услуги">
+          </div>
+          <button id="addOptionBtn" class="btn btn-primary">Добавить услугу</button>
+        </div>
+      </div>
+
+      <!-- Projects List -->
+      <div class="admin-card">
+        <div class="admin-card-header">
+          <h2>Последние проекты</h2>
+        </div>
+        <div class="admin-card-body">
+          <div id="projectsList" class="projects-list">
+            <!-- Projects will be inserted here -->
+          </div>
+        </div>
+      </div>
+
+      <!-- Change Password -->
+      <div class="admin-card">
+        <div class="admin-card-header">
+          <h2>Сменить пароль</h2>
+        </div>
+        <div class="admin-card-body">
+          <div class="form-group">
+            <label for="currentPassword">Текущий пароль</label>
+            <input type="password" id="currentPassword" class="form-control">
+          </div>
+          <div class="form-group">
+            <label for="newPassword">Новый пароль</label>
+            <input type="password" id="newPassword" class="form-control">
+          </div>
+          <button id="changePasswordBtn" class="btn btn-primary">Сменить пароль</button>
+          <p id="passwordMessage" class="text-muted" style="margin-top: 12px; display: none;"></p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="/js/admin.js"></script>
+</body>
+</html>
