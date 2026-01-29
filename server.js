@@ -1,19 +1,141 @@
 /**
  * Renovation Cost Estimator - Main Server
  * Express server with SQLite database
+ *
+ * SECURITY: API keys are stored in environment variables, not in code.
+ * Copy .env.example to .env and configure your keys there.
  */
 
 const express = require('express');
 const path = require('path');
+const crypto = require('crypto');
 const { v4: uuidv4 } = require('uuid');
 const db = require('./database');
+
+// Load environment variables from .env file (if exists)
+try {
+  require('dotenv').config();
+} catch (e) {
+  // dotenv not installed, use system environment variables
+}
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// Session secret for token generation
+const SESSION_SECRET = process.env.ADMIN_SESSION_SECRET || crypto.randomBytes(32).toString('hex');
+
+// In-memory session store (use Redis in production for multiple servers)
+const adminSessions = new Map();
+
+// Rate limiting store (simple in-memory, use Redis in production)
+const rateLimitStore = new Map();
+
+// ============================================
+// Security Middleware
+// ============================================
+
+/**
+ * Rate limiting middleware
+ * Limits requests per IP to prevent abuse
+ */
+function rateLimit(maxRequests = 100, windowMs = 15 * 60 * 1000) {
+  return (req, res, next) => {
+    const ip = req.ip || req.connection.remoteAddress;
+    const now = Date.now();
+
+    if (!rateLimitStore.has(ip)) {
+      rateLimitStore.set(ip, { count: 1, resetTime: now + windowMs });
+      return next();
+    }
+
+    const record = rateLimitStore.get(ip);
+
+    if (now > record.resetTime) {
+      record.count = 1;
+      record.resetTime = now + windowMs;
+      return next();
+    }
+
+    record.count++;
+
+    if (record.count > maxRequests) {
+      return res.status(429).json({
+        success: false,
+        error: 'Слишком много запросов. Попробуйте позже.'
+      });
+    }
+
+    next();
+  };
+}
+
+/**
+ * Generate secure admin session token
+ */
+function generateSessionToken() {
+  return crypto.randomBytes(32).toString('hex');
+}
+
+/**
+ * Verify admin session token
+ */
+function verifyAdminSession(token) {
+  if (!token) return false;
+  const session = adminSessions.get(token);
+  if (!session) return false;
+
+  // Check if session expired (24 hours)
+  if (Date.now() > session.expiresAt) {
+    adminSessions.delete(token);
+    return false;
+  }
+
+  return true;
+}
+
+/**
+ * Admin authentication middleware
+ * Protects admin-only routes with server-side session validation
+ */
+function requireAdmin(req, res, next) {
+  const token = req.headers['x-admin-token'] || req.query.adminToken;
+
+  if (!verifyAdminSession(token)) {
+    return res.status(401).json({
+      success: false,
+      error: 'Требуется авторизация администратора'
+    });
+  }
+
+  next();
+}
+
+/**
+ * Optional admin check (doesn't block, just sets flag)
+ */
+function checkAdmin(req, res, next) {
+  const token = req.headers['x-admin-token'] || req.query.adminToken;
+  req.isAdmin = verifyAdminSession(token);
+  next();
+}
+
 // Middleware
 app.use(express.json());
+
+// Apply rate limiting to all routes
+app.use(rateLimit(200, 15 * 60 * 1000)); // 200 requests per 15 minutes
+
+// Serve static files
 app.use(express.static(path.join(__dirname, 'public')));
+
+// Security headers
+app.use((req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'SAMEORIGIN');
+  res.setHeader('X-XSS-Protection', '1; mode=block');
+  next();
+});
 
 // ============================================
 // API Routes - Projects
@@ -129,9 +251,9 @@ app.get('/api/pricing', (req, res) => {
 });
 
 /**
- * Update pricing option (admin only)
+ * Update pricing option (admin only - PROTECTED)
  */
-app.put('/api/pricing/:id', (req, res) => {
+app.put('/api/pricing/:id', requireAdmin, (req, res) => {
   try {
     const { id } = req.params;
     const { price_per_sqm, is_active } = req.body;
@@ -147,9 +269,9 @@ app.put('/api/pricing/:id', (req, res) => {
 });
 
 /**
- * Get all pricing options for admin (including inactive)
+ * Get all pricing options for admin (including inactive - PROTECTED)
  */
-app.get('/api/admin/pricing', (req, res) => {
+app.get('/api/admin/pricing', requireAdmin, (req, res) => {
   try {
     const options = db.prepare('SELECT * FROM pricing_options ORDER BY category, name_ru').all();
     res.json({ success: true, options: options });
@@ -160,9 +282,9 @@ app.get('/api/admin/pricing', (req, res) => {
 });
 
 /**
- * Add new pricing option (admin only)
+ * Add new pricing option (admin only - PROTECTED)
  */
-app.post('/api/admin/pricing', (req, res) => {
+app.post('/api/admin/pricing', requireAdmin, (req, res) => {
   try {
     const { category, name_ru, name_key, price_per_sqm, unit, description_ru } = req.body;
 
@@ -184,13 +306,70 @@ app.post('/api/admin/pricing', (req, res) => {
 // API Routes - Chat
 // ============================================
 
+// Claude API client (initialized if API key exists)
+let anthropicClient = null;
+const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
+
+if (ANTHROPIC_API_KEY && ANTHROPIC_API_KEY !== 'your-anthropic-api-key-here') {
+  try {
+    const Anthropic = require('@anthropic-ai/sdk');
+    anthropicClient = new Anthropic({ apiKey: ANTHROPIC_API_KEY });
+    console.log('✓ Claude API initialized');
+  } catch (e) {
+    console.log('⚠ Claude API SDK not installed. Run: npm install @anthropic-ai/sdk');
+  }
+}
+
+/**
+ * Generate AI response using Claude API or mock
+ */
+async function generateAIResponse(message, context, useRealAI = false) {
+  // Use Claude API if available and enabled
+  if (anthropicClient && useRealAI) {
+    try {
+      const systemPrompt = `Вы - опытный консультант по ремонту квартир.
+Помогайте пользователям с выбором материалов, расчётом стоимости и рекомендациями.
+Отвечайте на русском языке. Будьте кратким и полезным.
+${context ? `
+Контекст проекта:
+- Количество комнат: ${context.rooms?.length || 0}
+- Общая площадь: ${context.totalArea || 0} м²
+- Текущая стоимость: ${context.totalCost || 0} ₽` : ''}`;
+
+      const response = await anthropicClient.messages.create({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 500,
+        system: systemPrompt,
+        messages: [{ role: 'user', content: message }]
+      });
+
+      return response.content[0].text;
+    } catch (error) {
+      console.error('Claude API error:', error);
+      // Fall back to mock response
+      return generateMockResponse(message, context);
+    }
+  }
+
+  // Use mock response
+  return generateMockResponse(message, context);
+}
+
 /**
  * Send message to AI chat
- * Currently uses mock responses, ready for Claude API integration
+ * Rate limited for regular users, admin can use real AI if configured
  */
-app.post('/api/chat', (req, res) => {
+app.post('/api/chat', checkAdmin, rateLimit(30, 15 * 60 * 1000), async (req, res) => {
   try {
     const { projectId, message, projectContext } = req.body;
+
+    if (!message || message.trim().length === 0) {
+      return res.status(400).json({ success: false, error: 'Сообщение не может быть пустым' });
+    }
+
+    if (message.length > 1000) {
+      return res.status(400).json({ success: false, error: 'Сообщение слишком длинное' });
+    }
 
     // Save user message to history if project exists
     if (projectId) {
@@ -200,9 +379,10 @@ app.post('/api/chat', (req, res) => {
       }
     }
 
-    // Generate mock AI response
-    // TODO: Replace with Claude API call when API key is available
-    const aiResponse = generateMockResponse(message, projectContext);
+    // Generate AI response
+    // Admin users get real Claude AI (if configured), others get mock
+    const useRealAI = req.isAdmin && anthropicClient !== null;
+    const aiResponse = await generateAIResponse(message, projectContext, useRealAI);
 
     // Save AI response to history
     if (projectId) {
@@ -212,7 +392,11 @@ app.post('/api/chat', (req, res) => {
       }
     }
 
-    res.json({ success: true, response: aiResponse });
+    res.json({
+      success: true,
+      response: aiResponse,
+      isRealAI: useRealAI
+    });
   } catch (error) {
     console.error('Error in chat:', error);
     res.status(500).json({ success: false, error: 'Ошибка чата' });
@@ -386,17 +570,35 @@ app.get('/api/export/:shareId', (req, res) => {
 // ============================================
 
 /**
- * Admin login
+ * Admin login - returns session token for subsequent requests
+ * Rate limited more strictly to prevent brute force
  */
-app.post('/api/admin/login', (req, res) => {
+app.post('/api/admin/login', rateLimit(5, 15 * 60 * 1000), (req, res) => {
   try {
     const { password } = req.body;
     const setting = db.prepare('SELECT setting_value FROM admin_settings WHERE setting_key = ?').get('admin_password');
 
     if (setting && setting.setting_value === password) {
-      res.json({ success: true });
+      // Generate secure session token
+      const token = generateSessionToken();
+      const expiresAt = Date.now() + (24 * 60 * 60 * 1000); // 24 hours
+
+      // Store session server-side
+      adminSessions.set(token, {
+        createdAt: Date.now(),
+        expiresAt: expiresAt
+      });
+
+      res.json({
+        success: true,
+        token: token,
+        expiresAt: expiresAt
+      });
     } else {
-      res.status(401).json({ success: false, error: 'Неверный пароль' });
+      // Delay response to slow down brute force attempts
+      setTimeout(() => {
+        res.status(401).json({ success: false, error: 'Неверный пароль' });
+      }, 1000);
     }
   } catch (error) {
     console.error('Error in admin login:', error);
@@ -405,9 +607,20 @@ app.post('/api/admin/login', (req, res) => {
 });
 
 /**
- * Change admin password
+ * Admin logout - invalidates session
  */
-app.put('/api/admin/password', (req, res) => {
+app.post('/api/admin/logout', (req, res) => {
+  const token = req.headers['x-admin-token'];
+  if (token) {
+    adminSessions.delete(token);
+  }
+  res.json({ success: true });
+});
+
+/**
+ * Change admin password (PROTECTED)
+ */
+app.put('/api/admin/password', requireAdmin, (req, res) => {
   try {
     const { currentPassword, newPassword } = req.body;
     const setting = db.prepare('SELECT setting_value FROM admin_settings WHERE setting_key = ?').get('admin_password');
@@ -416,8 +629,16 @@ app.put('/api/admin/password', (req, res) => {
       return res.status(401).json({ success: false, error: 'Неверный текущий пароль' });
     }
 
+    if (!newPassword || newPassword.length < 6) {
+      return res.status(400).json({ success: false, error: 'Пароль должен быть не менее 6 символов' });
+    }
+
     db.prepare('UPDATE admin_settings SET setting_value = ? WHERE setting_key = ?').run(newPassword, 'admin_password');
-    res.json({ success: true });
+
+    // Invalidate all sessions after password change
+    adminSessions.clear();
+
+    res.json({ success: true, message: 'Пароль изменён. Войдите заново.' });
   } catch (error) {
     console.error('Error changing password:', error);
     res.status(500).json({ success: false, error: 'Ошибка смены пароля' });
@@ -425,9 +646,9 @@ app.put('/api/admin/password', (req, res) => {
 });
 
 /**
- * Get all projects (admin)
+ * Get all projects (admin - PROTECTED)
  */
-app.get('/api/admin/projects', (req, res) => {
+app.get('/api/admin/projects', requireAdmin, (req, res) => {
   try {
     const projects = db.prepare('SELECT share_id, name, total_cost, created_at, updated_at FROM projects ORDER BY updated_at DESC').all();
     res.json({ success: true, projects: projects });
@@ -435,6 +656,13 @@ app.get('/api/admin/projects', (req, res) => {
     console.error('Error getting projects:', error);
     res.status(500).json({ success: false, error: 'Ошибка загрузки проектов' });
   }
+});
+
+/**
+ * Verify admin session (for client-side checks)
+ */
+app.get('/api/admin/verify', requireAdmin, (req, res) => {
+  res.json({ success: true, isAdmin: true });
 });
 
 // ============================================

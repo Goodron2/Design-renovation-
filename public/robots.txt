@@ -1,0 +1,22 @@
+# Robots.txt - Renovation Cost Estimator
+# Block admin panel and API from search engine indexing
+
+User-agent: *
+Allow: /
+Disallow: /admin
+Disallow: /admin/
+Disallow: /api/
+Disallow: /api/admin/
+
+# Block common crawlers explicitly
+User-agent: Googlebot
+Disallow: /admin
+Disallow: /api/
+
+User-agent: Yandex
+Disallow: /admin
+Disallow: /api/
+
+User-agent: Bingbot
+Disallow: /admin
+Disallow: /api/

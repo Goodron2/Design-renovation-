@@ -1,6 +1,6 @@
 {
   "name": "renovation-estimator",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Калькулятор стоимости ремонта с 3D визуализацией",
   "main": "server.js",
   "scripts": {
@@ -15,5 +15,9 @@
     "better-sqlite3": "^9.4.3",
     "xlsx": "^0.18.5",
     "uuid": "^9.0.0"
+  },
+  "optionalDependencies": {
+    "dotenv": "^16.3.1",
+    "@anthropic-ai/sdk": "^0.39.0"
   }
 }

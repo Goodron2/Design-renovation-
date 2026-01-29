@@ -1,10 +1,12 @@
 /**
  * Admin Panel JavaScript
  * Handles admin authentication and pricing management
+ * Uses secure token-based authentication
  */
 
 // State
 let isAuthenticated = false;
+let adminToken = null;
 let pricingData = [];
 
 // DOM Elements
@@ -43,13 +45,90 @@ const categoryNames = {
 };
 
 /**
+ * Get stored admin token
+ */
+function getStoredToken() {
+  const stored = sessionStorage.getItem('adminToken');
+  const expiresAt = sessionStorage.getItem('adminTokenExpires');
+
+  if (stored && expiresAt && Date.now() < parseInt(expiresAt)) {
+    return stored;
+  }
+
+  // Clear expired token
+  sessionStorage.removeItem('adminToken');
+  sessionStorage.removeItem('adminTokenExpires');
+  return null;
+}
+
+/**
+ * Store admin token
+ */
+function storeToken(token, expiresAt) {
+  sessionStorage.setItem('adminToken', token);
+  sessionStorage.setItem('adminTokenExpires', expiresAt.toString());
+  adminToken = token;
+}
+
+/**
+ * Clear stored token
+ */
+function clearToken() {
+  sessionStorage.removeItem('adminToken');
+  sessionStorage.removeItem('adminTokenExpires');
+  adminToken = null;
+}
+
+/**
+ * Make authenticated API request
+ */
+async function authFetch(url, options = {}) {
+  if (!adminToken) {
+    throw new Error('Not authenticated');
+  }
+
+  const headers = {
+    ...options.headers,
+    'X-Admin-Token': adminToken
+  };
+
+  const response = await fetch(url, { ...options, headers });
+
+  // If unauthorized, redirect to login
+  if (response.status === 401) {
+    clearToken();
+    showLoginForm();
+    throw new Error('Session expired');
+  }
+
+  return response;
+}
+
+/**
  * Initialize admin panel
  */
-function init() {
-  // Check if already authenticated (session storage)
-  if (sessionStorage.getItem('adminAuth') === 'true') {
-    showAdminPanel();
+async function init() {
+  // Check for stored token
+  adminToken = getStoredToken();
+
+  if (adminToken) {
+    // Verify token is still valid
+    try {
+      const response = await fetch('/api/admin/verify', {
+        headers: { 'X-Admin-Token': adminToken }
+      });
+
+      if (response.ok) {
+        showAdminPanel();
+        return;
+      }
+    } catch (e) {
+      // Token invalid
+    }
+    clearToken();
   }
+
+  showLoginForm();
 
   // Setup event listeners
   elements.loginBtn.addEventListener('click', login);
@@ -63,10 +142,29 @@ function init() {
 }
 
 /**
+ * Show login form
+ */
+function showLoginForm() {
+  elements.loginSection.style.display = 'block';
+  elements.adminPanel.classList.add('hidden');
+  elements.adminPassword.value = '';
+  elements.loginError.style.display = 'none';
+}
+
+/**
  * Login handler
  */
 async function login() {
   const password = elements.adminPassword.value;
+
+  if (!password) {
+    elements.loginError.style.display = 'block';
+    elements.loginError.textContent = 'Введите пароль';
+    return;
+  }
+
+  elements.loginBtn.disabled = true;
+  elements.loginBtn.textContent = 'Вход...';
 
   try {
     const response = await fetch('/api/admin/login', {
@@ -77,8 +175,8 @@ async function login() {
 
     const data = await response.json();
 
-    if (data.success) {
-      sessionStorage.setItem('adminAuth', 'true');
+    if (data.success && data.token) {
+      storeToken(data.token, data.expiresAt);
       showAdminPanel();
     } else {
       elements.loginError.style.display = 'block';
@@ -88,18 +186,28 @@ async function login() {
     console.error('Login error:', error);
     elements.loginError.style.display = 'block';
     elements.loginError.textContent = 'Ошибка соединения';
+  } finally {
+    elements.loginBtn.disabled = false;
+    elements.loginBtn.textContent = 'Войти';
   }
 }
 
 /**
  * Logout handler
  */
-function logout() {
-  sessionStorage.removeItem('adminAuth');
+async function logout() {
+  try {
+    await fetch('/api/admin/logout', {
+      method: 'POST',
+      headers: { 'X-Admin-Token': adminToken }
+    });
+  } catch (e) {
+    // Ignore errors on logout
+  }
+
+  clearToken();
   isAuthenticated = false;
-  elements.adminPanel.classList.add('hidden');
-  elements.loginSection.style.display = 'block';
-  elements.adminPassword.value = '';
+  showLoginForm();
 }
 
 /**
@@ -120,7 +228,7 @@ async function showAdminPanel() {
  */
 async function loadPricing() {
   try {
-    const response = await fetch('/api/admin/pricing');
+    const response = await authFetch('/api/admin/pricing');
     const data = await response.json();
 
     if (data.success) {
@@ -161,13 +269,13 @@ function renderPricingTable() {
       row.dataset.id = option.id;
       row.innerHTML = `
         <td>
-          <strong>${option.name_ru}</strong>
-          <br><small class="text-muted">${option.description_ru || ''}</small>
+          <strong>${escapeHtml(option.name_ru)}</strong>
+          <br><small class="text-muted">${escapeHtml(option.description_ru || '')}</small>
         </td>
         <td>
           <input type="number" class="price-input" value="${option.price_per_sqm}" min="0" step="10">
         </td>
-        <td>${option.unit}</td>
+        <td>${escapeHtml(option.unit)}</td>
         <td>
           <input type="checkbox" class="active-checkbox" ${option.is_active ? 'checked' : ''}>
         </td>
@@ -193,7 +301,7 @@ async function saveRowPricing(id, row) {
   const activeCheckbox = row.querySelector('.active-checkbox');
 
   try {
-    const response = await fetch(`/api/pricing/${id}`, {
+    const response = await authFetch(`/api/pricing/${id}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -215,7 +323,9 @@ async function saveRowPricing(id, row) {
     }
   } catch (error) {
     console.error('Save error:', error);
-    alert('Ошибка сохранения');
+    if (error.message !== 'Session expired') {
+      alert('Ошибка сохранения');
+    }
   }
 }
 
@@ -233,7 +343,7 @@ async function saveAllPricing() {
     const activeCheckbox = row.querySelector('.active-checkbox');
 
     try {
-      const response = await fetch(`/api/pricing/${id}`, {
+      const response = await authFetch(`/api/pricing/${id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -249,6 +359,7 @@ async function saveAllPricing() {
         errorCount++;
       }
     } catch (error) {
+      if (error.message === 'Session expired') return;
       errorCount++;
     }
   }
@@ -278,7 +389,7 @@ async function addNewOption() {
   }
 
   try {
-    const response = await fetch('/api/admin/pricing', {
+    const response = await authFetch('/api/admin/pricing', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -308,7 +419,9 @@ async function addNewOption() {
     }
   } catch (error) {
     console.error('Add option error:', error);
-    alert('Ошибка добавления услуги');
+    if (error.message !== 'Session expired') {
+      alert('Ошибка добавления услуги');
+    }
   }
 }
 
@@ -317,7 +430,7 @@ async function addNewOption() {
  */
 async function loadProjects() {
   try {
-    const response = await fetch('/api/admin/projects');
+    const response = await authFetch('/api/admin/projects');
     const data = await response.json();
 
     if (data.success) {
@@ -347,7 +460,7 @@ function renderProjectsList(projects) {
     card.className = 'project-card';
     card.innerHTML = `
       <div class="project-card-info">
-        <h3>${project.name}</h3>
+        <h3>${escapeHtml(project.name)}</h3>
         <p>Создан: ${date} | Стоимость: ${cost} ₽</p>
       </div>
       <div class="project-card-actions">
@@ -372,13 +485,13 @@ async function changePassword() {
     return;
   }
 
-  if (newPwd.length < 4) {
-    showPasswordMessage('Пароль должен быть не менее 4 символов', 'error');
+  if (newPwd.length < 6) {
+    showPasswordMessage('Пароль должен быть не менее 6 символов', 'error');
     return;
   }
 
   try {
-    const response = await fetch('/api/admin/password', {
+    const response = await authFetch('/api/admin/password', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -390,15 +503,23 @@ async function changePassword() {
     const data = await response.json();
 
     if (data.success) {
-      showPasswordMessage('Пароль успешно изменён', 'success');
+      showPasswordMessage('Пароль изменён. Войдите заново.', 'success');
       elements.currentPassword.value = '';
       elements.newPassword.value = '';
+
+      // Force re-login
+      setTimeout(() => {
+        clearToken();
+        showLoginForm();
+      }, 2000);
     } else {
       showPasswordMessage(data.error || 'Ошибка смены пароля', 'error');
     }
   } catch (error) {
     console.error('Password change error:', error);
-    showPasswordMessage('Ошибка соединения', 'error');
+    if (error.message !== 'Session expired') {
+      showPasswordMessage('Ошибка соединения', 'error');
+    }
   }
 }
 
@@ -412,7 +533,17 @@ function showPasswordMessage(message, type) {
 
   setTimeout(() => {
     elements.passwordMessage.style.display = 'none';
-  }, 3000);
+  }, 5000);
+}
+
+/**
+ * Escape HTML to prevent XSS
+ */
+function escapeHtml(text) {
+  if (!text) return '';
+  const div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
 }
 
 // Initialize on page load
