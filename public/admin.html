@@ -8,7 +8,7 @@
 </head>
 <body>
   <div class="admin-container">
-    <!-- Login Form (shown when not authenticated) -->
+    <!-- Login Form -->
     <div id="loginSection" class="login-form">
       <div class="admin-card">
         <div class="admin-card-header">
@@ -25,9 +25,8 @@
       </div>
     </div>
 
-    <!-- Admin Panel (shown after authentication) -->
+    <!-- Admin Panel -->
     <div id="adminPanel" class="hidden">
-      <!-- Header -->
       <div class="admin-header">
         <h1>Админ-панель</h1>
         <div>
@@ -43,7 +42,6 @@
         </div>
         <div class="admin-card-body">
           <p class="text-muted" style="margin-bottom: 16px;">Изменяйте цены за работу. Цены указаны в рублях.</p>
-
           <div style="overflow-x: auto;">
             <table class="pricing-table" id="pricingTable">
               <thead>
@@ -51,16 +49,14 @@
                   <th>Услуга</th>
                   <th>Цена за ед.</th>
                   <th>Единица</th>
+                  <th>Тип расчёта</th>
                   <th>Активно</th>
                   <th>Действие</th>
                 </tr>
               </thead>
-              <tbody id="pricingTableBody">
-                <!-- Pricing rows will be inserted here -->
-              </tbody>
+              <tbody id="pricingTableBody"></tbody>
             </table>
           </div>
-
           <button id="saveAllPricingBtn" class="btn btn-primary" style="margin-top: 16px;">Сохранить все изменения</button>
         </div>
       </div>
@@ -101,9 +97,18 @@
               <input type="text" id="newUnit" class="form-control" value="м²">
             </div>
           </div>
-          <div class="form-group">
-            <label for="newDescription">Описание</label>
-            <input type="text" id="newDescription" class="form-control" placeholder="Описание услуги">
+          <div class="form-row">
+            <div class="form-group">
+              <label for="newDescription">Описание</label>
+              <input type="text" id="newDescription" class="form-control" placeholder="Описание услуги">
+            </div>
+            <div class="form-group">
+              <label for="newPricingType">Тип расчёта</label>
+              <select id="newPricingType" class="form-control">
+                <option value="area">По площади</option>
+                <option value="quantity">По количеству</option>
+              </select>
+            </div>
           </div>
           <button id="addOptionBtn" class="btn btn-primary">Добавить услугу</button>
         </div>
@@ -115,9 +120,7 @@
           <h2>Последние проекты</h2>
         </div>
         <div class="admin-card-body">
-          <div id="projectsList" class="projects-list">
-            <!-- Projects will be inserted here -->
-          </div>
+          <div id="projectsList" class="projects-list"></div>
         </div>
       </div>
 

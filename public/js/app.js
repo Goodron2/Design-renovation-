@@ -6,7 +6,7 @@
 // Global state
 let rooms = [];
 let selectedRoomIndex = -1;
-let viewer3d = null;
+let floorPlan = null;
 let calculator = null;
 let chat = null;
 let currentProjectId = null;
@@ -21,12 +21,24 @@ const elements = {
   roomWidth: document.getElementById('roomWidth'),
   roomLength: document.getElementById('roomLength'),
   roomHeight: document.getElementById('roomHeight'),
+  roomShape: document.getElementById('roomShape'),
+  lShapeFields: document.getElementById('lShapeFields'),
+  tShapeFields: document.getElementById('tShapeFields'),
+  cutWidth: document.getElementById('cutWidth'),
+  cutLength: document.getElementById('cutLength'),
+  cutCorner: document.getElementById('cutCorner'),
+  stemWidth: document.getElementById('stemWidth'),
+  stemLength: document.getElementById('stemLength'),
+  stemPosition: document.getElementById('stemPosition'),
   saveRoomBtn: document.getElementById('saveRoomBtn'),
   cancelRoomBtn: document.getElementById('cancelRoomBtn'),
-  resetViewBtn: document.getElementById('resetViewBtn'),
+  zoomInBtn: document.getElementById('zoomInBtn'),
+  zoomOutBtn: document.getElementById('zoomOutBtn'),
+  fitViewBtn: document.getElementById('fitViewBtn'),
   currentRoomInfo: document.getElementById('currentRoomInfo'),
   noRoomSelected: document.getElementById('noRoomSelected'),
   optionsPanel: document.getElementById('optionsPanel'),
+  viewerPlaceholder: document.getElementById('viewerPlaceholder'),
   totalRooms: document.getElementById('totalRooms'),
   totalArea: document.getElementById('totalArea'),
   totalCost: document.getElementById('totalCost'),
@@ -35,9 +47,7 @@ const elements = {
   shareProjectBtn: document.getElementById('shareProjectBtn'),
   shareModal: document.getElementById('shareModal'),
   shareLink: document.getElementById('shareLink'),
-  copyLinkBtn: document.getElementById('copyLinkBtn'),
-  wallColor: document.getElementById('wallColor'),
-  floorColor: document.getElementById('floorColor')
+  copyLinkBtn: document.getElementById('copyLinkBtn')
 };
 
 // Options containers
@@ -49,15 +59,38 @@ const optionContainers = {
   plumbingOptions: document.getElementById('plumbingOptions')
 };
 
+// Subtotal elements
+const subtotalElements = {
+  walls: document.getElementById('subtotal_walls'),
+  floors: document.getElementById('subtotal_floors'),
+  ceiling: document.getElementById('subtotal_ceiling'),
+  electrical: document.getElementById('subtotal_electrical'),
+  plumbing: document.getElementById('subtotal_plumbing')
+};
+
 // Editing state
 let editingRoomIndex = -1;
+
+/**
+ * Normalize old-format room for backward compatibility
+ */
+function normalizeRoom(room) {
+  return RoomShapes.normalizeRoom(room);
+}
 
 /**
  * Initialize application
  */
 async function init() {
-  // Initialize 3D viewer
-  viewer3d = new Room3DViewer('viewer3d');
+  // Initialize floor plan viewer
+  floorPlan = new FloorPlanViewer('floorplanViewer');
+  floorPlan.onRoomSelect = (index) => {
+    if (index >= 0) {
+      selectRoom(index);
+    } else {
+      deselectRoom();
+    }
+  };
 
   // Initialize calculator and load pricing
   calculator = new RenovationCalculator();
@@ -66,6 +99,7 @@ async function init() {
   // Set calculator update callback
   calculator.onUpdate((total) => {
     updateTotalDisplay();
+    updateCategorySubtotals();
   });
 
   // Initialize chat
@@ -91,15 +125,19 @@ async function init() {
  * Setup all event listeners
  */
 function setupEventListeners() {
-  // Add room button
   elements.addRoomBtn.addEventListener('click', () => showRoomEditor());
-
-  // Room editor buttons
   elements.saveRoomBtn.addEventListener('click', saveRoom);
   elements.cancelRoomBtn.addEventListener('click', hideRoomEditor);
 
-  // Reset 3D view
-  elements.resetViewBtn.addEventListener('click', () => viewer3d.resetView());
+  // Zoom controls
+  elements.zoomInBtn.addEventListener('click', () => floorPlan.zoomIn());
+  elements.zoomOutBtn.addEventListener('click', () => floorPlan.zoomOut());
+  elements.fitViewBtn.addEventListener('click', () => floorPlan.fitToView());
+
+  // Shape selector toggle
+  elements.roomShape.addEventListener('change', () => {
+    updateShapeFields();
+  });
 
   // Tab switching
   document.querySelectorAll('.tab-btn').forEach(btn => {
@@ -107,15 +145,6 @@ function setupEventListeners() {
       const tab = e.target.dataset.tab;
       switchTab(tab);
     });
-  });
-
-  // Color pickers
-  elements.wallColor.addEventListener('input', (e) => {
-    viewer3d.setWallColor(e.target.value);
-  });
-
-  elements.floorColor.addEventListener('input', (e) => {
-    viewer3d.setFloorColor(e.target.value);
   });
 
   // Project actions
@@ -126,28 +155,49 @@ function setupEventListeners() {
 }
 
 /**
+ * Show/hide shape-specific fields in room editor
+ */
+function updateShapeFields() {
+  const shape = elements.roomShape.value;
+  elements.lShapeFields.classList.toggle('hidden', shape !== 'l_shape');
+  elements.tShapeFields.classList.toggle('hidden', shape !== 't_shape');
+}
+
+/**
  * Show room editor for new or existing room
  */
 function showRoomEditor(roomIndex = -1) {
   editingRoomIndex = roomIndex;
 
   if (roomIndex >= 0) {
-    // Editing existing room
-    const room = rooms[roomIndex];
+    const room = normalizeRoom(rooms[roomIndex]);
     elements.roomEditorTitle.textContent = 'Редактировать комнату';
     elements.roomName.value = room.name;
-    elements.roomWidth.value = room.width;
-    elements.roomLength.value = room.length;
+    elements.roomShape.value = room.shape || 'rectangle';
+    elements.roomWidth.value = room.params.width;
+    elements.roomLength.value = room.params.length;
     elements.roomHeight.value = room.height;
+
+    if (room.shape === 'l_shape') {
+      elements.cutWidth.value = room.params.cutWidth || 2;
+      elements.cutLength.value = room.params.cutLength || 2;
+      elements.cutCorner.value = room.params.cutCorner || 'top_right';
+    }
+    if (room.shape === 't_shape') {
+      elements.stemWidth.value = room.params.stemWidth || 2;
+      elements.stemLength.value = room.params.stemLength || 3;
+      elements.stemPosition.value = room.params.stemPosition || 'bottom_center';
+    }
   } else {
-    // New room
     elements.roomEditorTitle.textContent = 'Новая комната';
     elements.roomName.value = 'Гостиная';
+    elements.roomShape.value = 'rectangle';
     elements.roomWidth.value = 4;
     elements.roomLength.value = 5;
     elements.roomHeight.value = 2.7;
   }
 
+  updateShapeFields();
   elements.roomEditor.classList.remove('hidden');
 }
 
@@ -163,32 +213,53 @@ function hideRoomEditor() {
  * Save room from editor
  */
 function saveRoom() {
-  const room = {
-    name: elements.roomName.value,
+  const shape = elements.roomShape.value;
+  const params = {
     width: parseFloat(elements.roomWidth.value) || 4,
-    length: parseFloat(elements.roomLength.value) || 5,
-    height: parseFloat(elements.roomHeight.value) || 2.7
+    length: parseFloat(elements.roomLength.value) || 5
   };
 
-  // Validate
-  if (room.width < 1 || room.length < 1 || room.height < 2) {
+  if (shape === 'l_shape') {
+    params.cutWidth = parseFloat(elements.cutWidth.value) || 2;
+    params.cutLength = parseFloat(elements.cutLength.value) || 2;
+    params.cutCorner = elements.cutCorner.value;
+  }
+  if (shape === 't_shape') {
+    params.stemWidth = parseFloat(elements.stemWidth.value) || 2;
+    params.stemLength = parseFloat(elements.stemLength.value) || 3;
+    params.stemPosition = elements.stemPosition.value;
+  }
+
+  if (params.width < 1 || params.length < 1) {
     alert('Пожалуйста, введите корректные размеры комнаты');
     return;
   }
 
+  const room = {
+    name: elements.roomName.value,
+    height: parseFloat(elements.roomHeight.value) || 2.7,
+    shape: shape,
+    params: params,
+    position: { x: 0, y: 0 },
+    rotation: 0,
+    quantities: {}
+  };
+
   if (editingRoomIndex >= 0) {
-    // Update existing room
+    // Keep existing position and quantities
+    const old = rooms[editingRoomIndex];
+    if (old.position) room.position = old.position;
+    if (old.quantities) room.quantities = old.quantities;
     rooms[editingRoomIndex] = room;
   } else {
-    // Add new room
     rooms.push(room);
   }
 
   hideRoomEditor();
   calculator.setRooms(rooms);
+  updateFloorPlan();
   updateUI();
 
-  // Select the new/edited room
   selectRoom(editingRoomIndex >= 0 ? editingRoomIndex : rooms.length - 1);
 }
 
@@ -199,7 +270,6 @@ function deleteRoom(index) {
   if (confirm('Удалить эту комнату?')) {
     rooms.splice(index, 1);
 
-    // Update selected options indices
     const newSelectedOptions = {};
     Object.keys(calculator.selectedOptions).forEach(key => {
       const oldIndex = parseInt(key);
@@ -212,15 +282,18 @@ function deleteRoom(index) {
     calculator.setSelectedOptions(newSelectedOptions);
     calculator.setRooms(rooms);
 
-    // Adjust selection
     if (selectedRoomIndex === index) {
       selectedRoomIndex = -1;
-      viewer3d.showPlaceholder();
     } else if (selectedRoomIndex > index) {
       selectedRoomIndex--;
     }
 
+    updateFloorPlan();
     updateUI();
+
+    if (selectedRoomIndex < 0) {
+      deselectRoom();
+    }
   }
 }
 
@@ -229,38 +302,71 @@ function deleteRoom(index) {
  */
 function selectRoom(index) {
   selectedRoomIndex = index;
-  const room = rooms[index];
+  const room = normalizeRoom(rooms[index]);
 
-  // Update 3D viewer
-  viewer3d.createRoom(room);
+  // Update floor plan selection
+  floorPlan.selectRoom(index);
 
   // Update room info
-  const area = (room.width * room.length).toFixed(1);
-  elements.currentRoomInfo.textContent = `${room.name}: ${room.width}м × ${room.length}м × ${room.height}м (${area} м²)`;
+  const area = RoomShapes.calculateRoomArea(room).toFixed(1);
+  const p = room.params;
+  elements.currentRoomInfo.textContent = room.name + ': ' + p.width + 'м \u00D7 ' + p.length + 'м \u00D7 ' + room.height + 'м (' + area + ' м\u00B2)';
 
   // Show options panel
   elements.noRoomSelected.classList.add('hidden');
   elements.optionsPanel.classList.remove('hidden');
 
+  // Hide placeholder
+  if (elements.viewerPlaceholder) {
+    elements.viewerPlaceholder.style.display = 'none';
+  }
+
   // Render options for this room
   calculator.renderOptions(index, optionContainers);
+  updateCategorySubtotals();
 
   // Update rooms list UI
   updateRoomsList();
 }
 
 /**
+ * Deselect room
+ */
+function deselectRoom() {
+  selectedRoomIndex = -1;
+  elements.noRoomSelected.classList.remove('hidden');
+  elements.optionsPanel.classList.add('hidden');
+  elements.currentRoomInfo.textContent = 'Выберите комнату';
+  updateRoomsList();
+}
+
+/**
+ * Update the floor plan with current rooms
+ */
+function updateFloorPlan() {
+  if (rooms.length > 0) {
+    if (elements.viewerPlaceholder) {
+      elements.viewerPlaceholder.style.display = 'none';
+    }
+    floorPlan.setRooms(rooms);
+    floorPlan.fitToView();
+  } else {
+    if (elements.viewerPlaceholder) {
+      elements.viewerPlaceholder.style.display = 'block';
+    }
+    floorPlan.setRooms([]);
+  }
+}
+
+/**
  * Switch between tabs
  */
 function switchTab(tabName) {
-  // Update tab buttons
   document.querySelectorAll('.tab-btn').forEach(btn => {
     btn.classList.toggle('active', btn.dataset.tab === tabName);
   });
-
-  // Update tab content
   document.querySelectorAll('.tab-content').forEach(content => {
-    content.classList.toggle('active', content.id === `${tabName}Tab`);
+    content.classList.toggle('active', content.id === tabName + 'Tab');
   });
 }
 
@@ -271,37 +377,52 @@ function updateUI() {
   updateRoomsList();
   updateTotalDisplay();
 
-  // Enable/disable project actions
   const hasRooms = rooms.length > 0;
   elements.exportExcelBtn.disabled = !currentProjectId;
   elements.shareProjectBtn.disabled = !hasRooms;
 }
 
 /**
- * Update rooms list display
+ * Update rooms list display with per-room costs
  */
 function updateRoomsList() {
   elements.roomsList.innerHTML = '';
 
   rooms.forEach((room, index) => {
-    const area = (room.width * room.length).toFixed(1);
+    const normalized = normalizeRoom(room);
+    const area = RoomShapes.calculateRoomArea(normalized).toFixed(1);
+    const roomCost = calculator.calculateRoomCost(index);
     const isSelected = index === selectedRoomIndex;
 
     const roomEl = document.createElement('div');
-    roomEl.className = `room-item ${isSelected ? 'active' : ''}`;
-    roomEl.innerHTML = `
-      <div class="room-info">
-        <span class="room-name">${room.name}</span>
-        <span class="room-area">${area} м²</span>
-      </div>
-      <div class="room-actions">
-        <button onclick="event.stopPropagation(); showRoomEditor(${index})">✏️</button>
-        <button onclick="event.stopPropagation(); deleteRoom(${index})">🗑️</button>
-      </div>
-    `;
+    roomEl.className = 'room-item ' + (isSelected ? 'active' : '');
+    roomEl.innerHTML =
+      '<div class="room-info">' +
+        '<span class="room-name">' + normalized.name + '</span>' +
+        '<span class="room-area">' + area + ' м\u00B2</span>' +
+      '</div>' +
+      '<div class="room-cost">' + roomCost.toLocaleString('ru-RU') + ' \u20BD</div>' +
+      '<div class="room-actions">' +
+        '<button onclick="event.stopPropagation(); showRoomEditor(' + index + ')">\u270F\uFE0F</button>' +
+        '<button onclick="event.stopPropagation(); deleteRoom(' + index + ')">\uD83D\uDDD1\uFE0F</button>' +
+      '</div>';
 
     roomEl.addEventListener('click', () => selectRoom(index));
     elements.roomsList.appendChild(roomEl);
+  });
+}
+
+/**
+ * Update category subtotals
+ */
+function updateCategorySubtotals() {
+  if (selectedRoomIndex < 0) return;
+  const subtotals = calculator.getCategorySubtotals(selectedRoomIndex);
+  Object.entries(subtotalElements).forEach(([cat, el]) => {
+    if (el) {
+      const val = subtotals[cat] || 0;
+      el.textContent = val > 0 ? ('Итого: ' + val.toLocaleString('ru-RU') + ' \u20BD') : '';
+    }
   });
 }
 
@@ -310,8 +431,8 @@ function updateRoomsList() {
  */
 function updateTotalDisplay() {
   elements.totalRooms.textContent = rooms.length;
-  elements.totalArea.textContent = `${calculator.calculateTotalArea().toFixed(1)} м²`;
-  elements.totalCost.textContent = `${calculator.calculateTotal().toLocaleString('ru-RU')} ₽`;
+  elements.totalArea.textContent = calculator.calculateTotalArea().toFixed(1) + ' м\u00B2';
+  elements.totalCost.textContent = calculator.calculateTotal().toLocaleString('ru-RU') + ' \u20BD';
 }
 
 /**
@@ -333,14 +454,12 @@ async function saveProject() {
 
     let response;
     if (currentProjectId) {
-      // Update existing project
-      response = await fetch(`/api/projects/${currentProjectId}`, {
+      response = await fetch('/api/projects/' + currentProjectId, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(projectData)
       });
     } else {
-      // Create new project
       response = await fetch('/api/projects', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -354,11 +473,8 @@ async function saveProject() {
       if (!currentProjectId) {
         currentProjectId = data.shareId;
         chat.setProjectId(currentProjectId);
-
-        // Update URL without reload
-        window.history.pushState({}, '', `/project/${currentProjectId}`);
+        window.history.pushState({}, '', '/project/' + currentProjectId);
       }
-
       elements.exportExcelBtn.disabled = false;
       alert('Проект сохранён!');
     } else {
@@ -378,38 +494,31 @@ function exportToExcel() {
     alert('Сначала сохраните проект');
     return;
   }
-
-  window.location.href = `/api/export/${currentProjectId}`;
+  window.location.href = '/api/export/' + currentProjectId;
 }
 
 /**
- * Share project (show modal with link)
+ * Share project
  */
 async function shareProject() {
-  // Save first if not saved
   if (!currentProjectId) {
     await saveProject();
-    if (!currentProjectId) return; // Save failed
+    if (!currentProjectId) return;
   }
-
-  const shareUrl = `${window.location.origin}/project/${currentProjectId}`;
+  const shareUrl = window.location.origin + '/project/' + currentProjectId;
   elements.shareLink.value = shareUrl;
   elements.shareModal.classList.remove('hidden');
 }
 
 /**
- * Copy share link to clipboard
+ * Copy share link
  */
 function copyShareLink() {
   elements.shareLink.select();
   document.execCommand('copy');
-
-  // Show feedback
   const originalText = elements.copyLinkBtn.textContent;
   elements.copyLinkBtn.textContent = 'Скопировано!';
-  setTimeout(() => {
-    elements.copyLinkBtn.textContent = originalText;
-  }, 2000);
+  setTimeout(() => { elements.copyLinkBtn.textContent = originalText; }, 2000);
 }
 
 /**
@@ -425,8 +534,7 @@ function closeShareModal() {
 async function checkForExistingProject() {
   const pathMatch = window.location.pathname.match(/\/project\/([a-zA-Z0-9-]+)/);
   if (pathMatch) {
-    const projectId = pathMatch[1];
-    await loadProject(projectId);
+    await loadProject(pathMatch[1]);
   }
 }
 
@@ -435,28 +543,26 @@ async function checkForExistingProject() {
  */
 async function loadProject(projectId) {
   try {
-    const response = await fetch(`/api/projects/${projectId}`);
+    const response = await fetch('/api/projects/' + projectId);
     const data = await response.json();
 
     if (data.success) {
       const project = data.project;
-
-      // Restore state
       currentProjectId = project.share_id;
-      rooms = project.rooms;
+
+      // Normalize rooms for backward compat
+      rooms = project.rooms.map(r => normalizeRoom(r));
       calculator.setRooms(rooms);
       calculator.setSelectedOptions(project.selected_options);
 
-      // Update chat
       chat.setProjectId(currentProjectId);
       if (data.chatHistory && data.chatHistory.length > 0) {
         chat.loadHistory(data.chatHistory);
       }
 
-      // Update UI
+      updateFloorPlan();
       updateUI();
 
-      // Select first room if any
       if (rooms.length > 0) {
         selectRoom(0);
       }

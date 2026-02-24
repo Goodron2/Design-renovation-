@@ -5,10 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Калькулятор ремонта | Планировщик стоимости</title>
   <link rel="stylesheet" href="/css/styles.css">
-  <!-- Three.js for 3D visualization -->
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-  <!-- OrbitControls for 3D camera control -->
-  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+  <!-- Konva.js for 2D floor plan -->
+  <script src="https://unpkg.com/konva@9/konva.min.js"></script>
 </head>
 <body>
   <div class="app-container">
@@ -51,6 +49,14 @@
               <option value="Кабинет">Кабинет</option>
             </select>
           </div>
+          <div class="form-group">
+            <label for="roomShape">Форма</label>
+            <select id="roomShape" class="form-control">
+              <option value="rectangle">Прямоугольник</option>
+              <option value="l_shape">Г-образная</option>
+              <option value="t_shape">Т-образная</option>
+            </select>
+          </div>
           <div class="form-row">
             <div class="form-group">
               <label for="roomWidth">Ширина (м)</label>
@@ -65,6 +71,50 @@
             <label for="roomHeight">Высота (м)</label>
             <input type="number" id="roomHeight" class="form-control" value="2.7" min="2" max="5" step="0.1">
           </div>
+          <!-- L-shape fields -->
+          <div id="lShapeFields" class="shape-fields hidden">
+            <div class="form-row">
+              <div class="form-group">
+                <label for="cutWidth">Ширина выреза (м)</label>
+                <input type="number" id="cutWidth" class="form-control" value="2" min="0.5" max="15" step="0.1">
+              </div>
+              <div class="form-group">
+                <label for="cutLength">Длина выреза (м)</label>
+                <input type="number" id="cutLength" class="form-control" value="2" min="0.5" max="15" step="0.1">
+              </div>
+            </div>
+            <div class="form-group">
+              <label for="cutCorner">Угол выреза</label>
+              <select id="cutCorner" class="form-control">
+                <option value="top_right">Верхний правый</option>
+                <option value="top_left">Верхний левый</option>
+                <option value="bottom_right">Нижний правый</option>
+                <option value="bottom_left">Нижний левый</option>
+              </select>
+            </div>
+          </div>
+          <!-- T-shape fields -->
+          <div id="tShapeFields" class="shape-fields hidden">
+            <div class="form-row">
+              <div class="form-group">
+                <label for="stemWidth">Ширина выступа (м)</label>
+                <input type="number" id="stemWidth" class="form-control" value="2" min="0.5" max="15" step="0.1">
+              </div>
+              <div class="form-group">
+                <label for="stemLength">Длина выступа (м)</label>
+                <input type="number" id="stemLength" class="form-control" value="3" min="0.5" max="15" step="0.1">
+              </div>
+            </div>
+            <div class="form-group">
+              <label for="stemPosition">Позиция выступа</label>
+              <select id="stemPosition" class="form-control">
+                <option value="bottom_center">Снизу</option>
+                <option value="top_center">Сверху</option>
+                <option value="left_center">Слева</option>
+                <option value="right_center">Справа</option>
+              </select>
+            </div>
+          </div>
           <div class="form-actions">
             <button id="saveRoomBtn" class="btn btn-primary">Сохранить</button>
             <button id="cancelRoomBtn" class="btn btn-secondary">Отмена</button>
@@ -72,16 +122,18 @@
         </div>
       </aside>
 
-      <!-- Center - 3D Viewer -->
+      <!-- Center - Floor Plan Viewer -->
       <section class="panel panel-center">
         <div class="viewer-header">
-          <h2>3D Просмотр</h2>
+          <h2>Планировка</h2>
           <div class="viewer-controls">
-            <button id="resetViewBtn" class="btn btn-small">Сбросить вид</button>
+            <button id="zoomInBtn" class="btn btn-small">+</button>
+            <button id="zoomOutBtn" class="btn btn-small">−</button>
+            <button id="fitViewBtn" class="btn btn-small">⊞</button>
           </div>
         </div>
-        <div id="viewer3d" class="viewer-3d">
-          <div class="viewer-placeholder">
+        <div id="floorplanViewer" class="floorplan-viewer">
+          <div class="viewer-placeholder" id="viewerPlaceholder">
             <p>Добавьте комнату для начала</p>
           </div>
         </div>
@@ -107,41 +159,31 @@
             <div class="options-section">
               <h3>Стены</h3>
               <div id="wallOptions" class="options-group"></div>
+              <div class="category-subtotal" id="subtotal_walls"></div>
             </div>
 
             <div class="options-section">
               <h3>Полы</h3>
               <div id="floorOptions" class="options-group"></div>
+              <div class="category-subtotal" id="subtotal_floors"></div>
             </div>
 
             <div class="options-section">
               <h3>Потолок</h3>
               <div id="ceilingOptions" class="options-group"></div>
+              <div class="category-subtotal" id="subtotal_ceiling"></div>
             </div>
 
             <div class="options-section">
               <h3>Электрика</h3>
               <div id="electricalOptions" class="options-group"></div>
+              <div class="category-subtotal" id="subtotal_electrical"></div>
             </div>
 
             <div class="options-section">
               <h3>Сантехника</h3>
               <div id="plumbingOptions" class="options-group"></div>
-            </div>
-
-            <!-- Color Picker -->
-            <div class="options-section">
-              <h3>Цвета</h3>
-              <div class="color-pickers">
-                <div class="color-picker-group">
-                  <label>Стены</label>
-                  <input type="color" id="wallColor" value="#f5f5f5">
-                </div>
-                <div class="color-picker-group">
-                  <label>Пол</label>
-                  <input type="color" id="floorColor" value="#8B4513">
-                </div>
-              </div>
+              <div class="category-subtotal" id="subtotal_plumbing"></div>
             </div>
           </div>
         </div>
@@ -207,7 +249,8 @@
   </div>
 
   <!-- JavaScript -->
-  <script src="/js/room3d.js"></script>
+  <script src="/js/shapes.js"></script>
+  <script src="/js/floorplan.js"></script>
   <script src="/js/calculator.js"></script>
   <script src="/js/chat.js"></script>
   <script src="/js/app.js"></script>

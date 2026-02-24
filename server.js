@@ -1,9 +1,6 @@
 /**
  * Renovation Cost Estimator - Main Server
  * Express server with SQLite database
- *
- * SECURITY: API keys are stored in environment variables, not in code.
- * Copy .env.example to .env and configure your keys there.
  */
 
 const express = require('express');
@@ -11,6 +8,7 @@ const path = require('path');
 const crypto = require('crypto');
 const { v4: uuidv4 } = require('uuid');
 const db = require('./database');
+const RoomShapes = require('./public/js/shapes');
 
 // Load environment variables from .env file (if exists)
 try {
@@ -22,23 +20,14 @@ try {
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Session secret for token generation
 const SESSION_SECRET = process.env.ADMIN_SESSION_SECRET || crypto.randomBytes(32).toString('hex');
-
-// In-memory session store (use Redis in production for multiple servers)
 const adminSessions = new Map();
-
-// Rate limiting store (simple in-memory, use Redis in production)
 const rateLimitStore = new Map();
 
 // ============================================
 // Security Middleware
 // ============================================
 
-/**
- * Rate limiting middleware
- * Limits requests per IP to prevent abuse
- */
 function rateLimit(maxRequests = 100, windowMs = 15 * 60 * 1000) {
   return (req, res, next) => {
     const ip = req.ip || req.connection.remoteAddress;
@@ -50,7 +39,6 @@ function rateLimit(maxRequests = 100, windowMs = 15 * 60 * 1000) {
     }
 
     const record = rateLimitStore.get(ip);
-
     if (now > record.resetTime) {
       record.count = 1;
       record.resetTime = now + windowMs;
@@ -58,7 +46,6 @@ function rateLimit(maxRequests = 100, windowMs = 15 * 60 * 1000) {
     }
 
     record.count++;
-
     if (record.count > maxRequests) {
       return res.status(429).json({
         success: false,
@@ -70,50 +57,32 @@ function rateLimit(maxRequests = 100, windowMs = 15 * 60 * 1000) {
   };
 }
 
-/**
- * Generate secure admin session token
- */
 function generateSessionToken() {
   return crypto.randomBytes(32).toString('hex');
 }
 
-/**
- * Verify admin session token
- */
 function verifyAdminSession(token) {
   if (!token) return false;
   const session = adminSessions.get(token);
   if (!session) return false;
-
-  // Check if session expired (24 hours)
   if (Date.now() > session.expiresAt) {
     adminSessions.delete(token);
     return false;
   }
-
   return true;
 }
 
-/**
- * Admin authentication middleware
- * Protects admin-only routes with server-side session validation
- */
 function requireAdmin(req, res, next) {
   const token = req.headers['x-admin-token'] || req.query.adminToken;
-
   if (!verifyAdminSession(token)) {
     return res.status(401).json({
       success: false,
       error: 'Требуется авторизация администратора'
     });
   }
-
   next();
 }
 
-/**
- * Optional admin check (doesn't block, just sets flag)
- */
 function checkAdmin(req, res, next) {
   const token = req.headers['x-admin-token'] || req.query.adminToken;
   req.isAdmin = verifyAdminSession(token);
@@ -122,11 +91,7 @@ function checkAdmin(req, res, next) {
 
 // Middleware
 app.use(express.json());
-
-// Apply rate limiting to all routes
-app.use(rateLimit(200, 15 * 60 * 1000)); // 200 requests per 15 minutes
-
-// Serve static files
+app.use(rateLimit(200, 15 * 60 * 1000));
 app.use(express.static(path.join(__dirname, 'public')));
 
 // Security headers
@@ -141,13 +106,10 @@ app.use((req, res, next) => {
 // API Routes - Projects
 // ============================================
 
-/**
- * Create a new project
- */
 app.post('/api/projects', (req, res) => {
   try {
     const { name, rooms, selectedOptions, totalCost } = req.body;
-    const shareId = uuidv4().substring(0, 8); // Short shareable ID
+    const shareId = uuidv4().substring(0, 8);
 
     const stmt = db.prepare(`
       INSERT INTO projects (share_id, name, rooms, selected_options, total_cost)
@@ -166,7 +128,7 @@ app.post('/api/projects', (req, res) => {
       success: true,
       projectId: result.lastInsertRowid,
       shareId: shareId,
-      shareUrl: `/project/${shareId}`
+      shareUrl: '/project/' + shareId
     });
   } catch (error) {
     console.error('Error creating project:', error);
@@ -174,9 +136,6 @@ app.post('/api/projects', (req, res) => {
   }
 });
 
-/**
- * Get project by share ID
- */
 app.get('/api/projects/:shareId', (req, res) => {
   try {
     const { shareId } = req.params;
@@ -186,11 +145,9 @@ app.get('/api/projects/:shareId', (req, res) => {
       return res.status(404).json({ success: false, error: 'Проект не найден' });
     }
 
-    // Parse JSON fields
     project.rooms = JSON.parse(project.rooms);
     project.selected_options = JSON.parse(project.selected_options);
 
-    // Get chat history
     const chatHistory = db.prepare('SELECT role, message, created_at FROM chat_history WHERE project_id = ? ORDER BY created_at').all(project.id);
 
     res.json({
@@ -204,9 +161,6 @@ app.get('/api/projects/:shareId', (req, res) => {
   }
 });
 
-/**
- * Update project
- */
 app.put('/api/projects/:shareId', (req, res) => {
   try {
     const { shareId } = req.params;
@@ -237,9 +191,6 @@ app.put('/api/projects/:shareId', (req, res) => {
 // API Routes - Pricing
 // ============================================
 
-/**
- * Get all pricing options
- */
 app.get('/api/pricing', (req, res) => {
   try {
     const options = db.prepare('SELECT * FROM pricing_options WHERE is_active = 1 ORDER BY category, name_ru').all();
@@ -250,16 +201,13 @@ app.get('/api/pricing', (req, res) => {
   }
 });
 
-/**
- * Update pricing option (admin only - PROTECTED)
- */
 app.put('/api/pricing/:id', requireAdmin, (req, res) => {
   try {
     const { id } = req.params;
-    const { price_per_sqm, is_active } = req.body;
+    const { price_per_sqm, is_active, pricing_type } = req.body;
 
-    const stmt = db.prepare('UPDATE pricing_options SET price_per_sqm = ?, is_active = ? WHERE id = ?');
-    stmt.run(price_per_sqm, is_active ? 1 : 0, id);
+    const stmt = db.prepare('UPDATE pricing_options SET price_per_sqm = ?, is_active = ?, pricing_type = ? WHERE id = ?');
+    stmt.run(price_per_sqm, is_active ? 1 : 0, pricing_type || 'area', id);
 
     res.json({ success: true });
   } catch (error) {
@@ -268,9 +216,6 @@ app.put('/api/pricing/:id', requireAdmin, (req, res) => {
   }
 });
 
-/**
- * Get all pricing options for admin (including inactive - PROTECTED)
- */
 app.get('/api/admin/pricing', requireAdmin, (req, res) => {
   try {
     const options = db.prepare('SELECT * FROM pricing_options ORDER BY category, name_ru').all();
@@ -281,19 +226,16 @@ app.get('/api/admin/pricing', requireAdmin, (req, res) => {
   }
 });
 
-/**
- * Add new pricing option (admin only - PROTECTED)
- */
 app.post('/api/admin/pricing', requireAdmin, (req, res) => {
   try {
-    const { category, name_ru, name_key, price_per_sqm, unit, description_ru } = req.body;
+    const { category, name_ru, name_key, price_per_sqm, unit, description_ru, pricing_type } = req.body;
 
     const stmt = db.prepare(`
-      INSERT INTO pricing_options (category, name_ru, name_key, price_per_sqm, unit, description_ru)
-      VALUES (?, ?, ?, ?, ?, ?)
+      INSERT INTO pricing_options (category, name_ru, name_key, price_per_sqm, unit, description_ru, pricing_type)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
     `);
 
-    const result = stmt.run(category, name_ru, name_key, price_per_sqm, unit || 'м²', description_ru || '');
+    const result = stmt.run(category, name_ru, name_key, price_per_sqm, unit || 'м²', description_ru || '', pricing_type || 'area');
 
     res.json({ success: true, id: result.lastInsertRowid });
   } catch (error) {
@@ -306,7 +248,6 @@ app.post('/api/admin/pricing', requireAdmin, (req, res) => {
 // API Routes - Chat
 // ============================================
 
-// Claude API client (initialized if API key exists)
 let anthropicClient = null;
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
 
@@ -320,21 +261,11 @@ if (ANTHROPIC_API_KEY && ANTHROPIC_API_KEY !== 'your-anthropic-api-key-here') {
   }
 }
 
-/**
- * Generate AI response using Claude API or mock
- */
 async function generateAIResponse(message, context, useRealAI = false) {
-  // Use Claude API if available and enabled
   if (anthropicClient && useRealAI) {
     try {
-      const systemPrompt = `Вы - опытный консультант по ремонту квартир.
-Помогайте пользователям с выбором материалов, расчётом стоимости и рекомендациями.
-Отвечайте на русском языке. Будьте кратким и полезным.
-${context ? `
-Контекст проекта:
-- Количество комнат: ${context.rooms?.length || 0}
-- Общая площадь: ${context.totalArea || 0} м²
-- Текущая стоимость: ${context.totalCost || 0} ₽` : ''}`;
+      const systemPrompt = 'Вы - опытный консультант по ремонту квартир.\nПомогайте пользователям с выбором материалов, расчётом стоимости и рекомендациями.\nОтвечайте на русском языке. Будьте кратким и полезным.' +
+        (context ? '\n\nКонтекст проекта:\n- Количество комнат: ' + (context.rooms?.length || 0) + '\n- Общая площадь: ' + (context.totalArea || 0) + ' м²\n- Текущая стоимость: ' + (context.totalCost || 0) + ' ₽' : '');
 
       const response = await anthropicClient.messages.create({
         model: 'claude-sonnet-4-20250514',
@@ -346,19 +277,13 @@ ${context ? `
       return response.content[0].text;
     } catch (error) {
       console.error('Claude API error:', error);
-      // Fall back to mock response
       return generateMockResponse(message, context);
     }
   }
 
-  // Use mock response
   return generateMockResponse(message, context);
 }
 
-/**
- * Send message to AI chat
- * Rate limited for regular users, admin can use real AI if configured
- */
 app.post('/api/chat', checkAdmin, rateLimit(30, 15 * 60 * 1000), async (req, res) => {
   try {
     const { projectId, message, projectContext } = req.body;
@@ -366,12 +291,10 @@ app.post('/api/chat', checkAdmin, rateLimit(30, 15 * 60 * 1000), async (req, res
     if (!message || message.trim().length === 0) {
       return res.status(400).json({ success: false, error: 'Сообщение не может быть пустым' });
     }
-
     if (message.length > 1000) {
       return res.status(400).json({ success: false, error: 'Сообщение слишком длинное' });
     }
 
-    // Save user message to history if project exists
     if (projectId) {
       const project = db.prepare('SELECT id FROM projects WHERE share_id = ?').get(projectId);
       if (project) {
@@ -379,12 +302,9 @@ app.post('/api/chat', checkAdmin, rateLimit(30, 15 * 60 * 1000), async (req, res
       }
     }
 
-    // Generate AI response
-    // Admin users get real Claude AI (if configured), others get mock
     const useRealAI = req.isAdmin && anthropicClient !== null;
     const aiResponse = await generateAIResponse(message, projectContext, useRealAI);
 
-    // Save AI response to history
     if (projectId) {
       const project = db.prepare('SELECT id FROM projects WHERE share_id = ?').get(projectId);
       if (project) {
@@ -392,77 +312,54 @@ app.post('/api/chat', checkAdmin, rateLimit(30, 15 * 60 * 1000), async (req, res
       }
     }
 
-    res.json({
-      success: true,
-      response: aiResponse,
-      isRealAI: useRealAI
-    });
+    res.json({ success: true, response: aiResponse, isRealAI: useRealAI });
   } catch (error) {
     console.error('Error in chat:', error);
     res.status(500).json({ success: false, error: 'Ошибка чата' });
   }
 });
 
-/**
- * Mock AI response generator
- * Will be replaced with Claude API integration
- */
 function generateMockResponse(message, context) {
   const lowerMessage = message.toLowerCase();
 
-  // Context-aware responses based on project data
   if (context && context.rooms && context.rooms.length > 0) {
-    const totalArea = context.rooms.reduce((sum, room) => sum + (room.width * room.length), 0);
+    const totalArea = context.rooms.reduce((sum, room) => {
+      const r = RoomShapes.normalizeRoom(room);
+      return sum + RoomShapes.calculateRoomArea(r);
+    }, 0);
 
     if (lowerMessage.includes('стоимость') || lowerMessage.includes('цена') || lowerMessage.includes('сколько')) {
-      return `На основе вашего проекта общая площадь составляет ${totalArea.toFixed(1)} м². Текущая оценка стоимости: ${context.totalCost?.toLocaleString('ru-RU') || 0} ₽. Хотите, чтобы я объяснил расчёт подробнее?`;
+      return 'На основе вашего проекта общая площадь составляет ' + totalArea.toFixed(1) + ' м². Текущая оценка стоимости: ' + (context.totalCost?.toLocaleString('ru-RU') || 0) + ' ₽. Хотите, чтобы я объяснил расчёт подробнее?';
     }
 
     if (lowerMessage.includes('рекомендац') || lowerMessage.includes('совет')) {
-      return `Для ваших ${context.rooms.length} комнат(ы) общей площадью ${totalArea.toFixed(1)} м² я бы рекомендовал обратить внимание на комбинацию материалов. Например, ламинат отлично подойдёт для жилых комнат, а плитка — для кухни и ванной.`;
+      return 'Для ваших ' + context.rooms.length + ' комнат(ы) общей площадью ' + totalArea.toFixed(1) + ' м² я бы рекомендовал обратить внимание на комбинацию материалов. Например, ламинат отлично подойдёт для жилых комнат, а плитка — для кухни и ванной.';
     }
   }
 
-  // General responses
   if (lowerMessage.includes('привет') || lowerMessage.includes('здравствуй')) {
-    return 'Здравствуйте! Я ваш помощник по планированию ремонта. Чем могу помочь? Вы можете спросить меня о стоимости работ, материалах или получить рекомендации.';
+    return 'Здравствуйте! Я ваш помощник по планированию ремонта. Чем могу помочь?';
   }
-
   if (lowerMessage.includes('ламинат')) {
-    return 'Ламинат — отличный выбор для жилых комнат. Он практичен, легко укладывается и имеет много вариантов дизайна. Стоимость укладки включает подготовку основания и подложку.';
+    return 'Ламинат — отличный выбор для жилых комнат. Он практичен, легко укладывается и имеет много вариантов дизайна.';
   }
-
   if (lowerMessage.includes('плитка') || lowerMessage.includes('плитку')) {
-    return 'Плитка идеально подходит для ванной комнаты и кухни благодаря водостойкости. Учтите, что укладка плитки требует выравнивания пола, что может увеличить стоимость.';
+    return 'Плитка идеально подходит для ванной и кухни благодаря водостойкости. Учтите, что укладка требует выравнивания пола.';
   }
-
   if (lowerMessage.includes('потолок')) {
-    return 'Для потолка есть несколько вариантов: покраска (бюджетный вариант), натяжной потолок (быстрый монтаж, много вариантов) или гипсокартон (позволяет создать многоуровневые конструкции).';
+    return 'Для потолка есть варианты: покраска (бюджетно), натяжной (быстрый монтаж) или гипсокартон (многоуровневые конструкции).';
   }
-
   if (lowerMessage.includes('стен') || lowerMessage.includes('обои')) {
-    return 'Для отделки стен популярны три варианта: покраска (легко обновить), обои (большой выбор дизайнов) и декоративная штукатурка (премиум вариант с уникальной текстурой).';
+    return 'Для стен популярны: покраска (легко обновить), обои (выбор дизайнов) и декоративная штукатурка (премиум текстура).';
   }
 
-  if (lowerMessage.includes('сэконом') || lowerMessage.includes('дешев') || lowerMessage.includes('бюджет')) {
-    return 'Для экономии рекомендую: линолеум вместо ламината, покраску стен вместо обоев, и покраску потолка. Это позволит сократить бюджет на 30-40% без потери качества.';
-  }
-
-  if (lowerMessage.includes('срок') || lowerMessage.includes('время') || lowerMessage.includes('долго')) {
-    return 'Сроки ремонта зависят от объёма работ. Для комнаты 15-20 м² обычно требуется: подготовка 2-3 дня, основные работы 5-7 дней, финишная отделка 2-3 дня. Точные сроки подрядчик определит после осмотра.';
-  }
-
-  // Default response
-  return 'Я могу помочь вам с выбором материалов, расчётом стоимости и рекомендациями по ремонту. Задайте вопрос о конкретных работах или материалах, и я постараюсь дать полезный совет!';
+  return 'Я могу помочь с выбором материалов, расчётом стоимости и рекомендациями. Задайте вопрос о конкретных работах!';
 }
 
 // ============================================
 // API Routes - Export
 // ============================================
 
-/**
- * Export project to Excel
- */
 app.get('/api/export/:shareId', (req, res) => {
   try {
     const XLSX = require('xlsx');
@@ -473,17 +370,15 @@ app.get('/api/export/:shareId', (req, res) => {
       return res.status(404).json({ success: false, error: 'Проект не найден' });
     }
 
-    const rooms = JSON.parse(project.rooms);
+    const rooms = JSON.parse(project.rooms).map(r => RoomShapes.normalizeRoom(r));
     const selectedOptions = JSON.parse(project.selected_options);
-    const pricingOptions = db.prepare('SELECT * FROM pricing_options').all();
+    const pricingOptionsDb = db.prepare('SELECT * FROM pricing_options').all();
 
-    // Create pricing lookup
     const pricingLookup = {};
-    pricingOptions.forEach(opt => {
+    pricingOptionsDb.forEach(opt => {
       pricingLookup[opt.name_key] = opt;
     });
 
-    // Build Excel data
     const workbook = XLSX.utils.book_new();
 
     // Summary sheet
@@ -496,14 +391,15 @@ app.get('/api/export/:shareId', (req, res) => {
       ['', '', '', ''],
     ];
 
-    // Room details
     rooms.forEach((room, index) => {
-      const area = room.width * room.length;
-      const wallArea = 2 * room.height * (room.width + room.length);
-      summaryData.push([`Комната ${index + 1}: ${room.name}`, '', '', '']);
-      summaryData.push(['Размеры:', `${room.width} x ${room.length} x ${room.height} м`, '', '']);
-      summaryData.push(['Площадь пола:', `${area.toFixed(2)} м²`, '', '']);
-      summaryData.push(['Площадь стен:', `${wallArea.toFixed(2)} м²`, '', '']);
+      const area = RoomShapes.calculateRoomArea(room);
+      const wallArea = RoomShapes.calculateWallArea(room);
+      const p = room.params;
+      summaryData.push(['Комната ' + (index + 1) + ': ' + room.name, '', '', '']);
+      summaryData.push(['Размеры:', p.width + ' x ' + p.length + ' x ' + room.height + ' м', '', '']);
+      summaryData.push(['Форма:', room.shape === 'rectangle' ? 'Прямоугольник' : room.shape === 'l_shape' ? 'Г-образная' : room.shape === 't_shape' ? 'Т-образная' : room.shape, '', '']);
+      summaryData.push(['Площадь пола:', area.toFixed(2) + ' м²', '', '']);
+      summaryData.push(['Площадь стен:', wallArea.toFixed(2) + ' м²', '', '']);
       summaryData.push(['', '', '', '']);
     });
 
@@ -514,49 +410,54 @@ app.get('/api/export/:shareId', (req, res) => {
     const detailsData = [
       ['Детализация работ', '', '', '', ''],
       ['', '', '', '', ''],
-      ['Комната', 'Работа', 'Площадь', 'Цена за м²', 'Стоимость'],
+      ['Комната', 'Работа', 'Количество', 'Цена за ед.', 'Стоимость'],
     ];
 
     rooms.forEach((room, roomIndex) => {
       const roomOptions = selectedOptions[roomIndex] || {};
-      const floorArea = room.width * room.length;
-      const wallArea = 2 * room.height * (room.width + room.length);
+      const floorArea = RoomShapes.calculateRoomArea(room);
+      const wallArea = RoomShapes.calculateWallArea(room);
       const ceilingArea = floorArea;
 
-      Object.entries(roomOptions).forEach(([optionKey, selected]) => {
-        if (selected && pricingLookup[optionKey]) {
+      Object.entries(roomOptions).forEach(([optionKey, value]) => {
+        if ((value === true || (typeof value === 'number' && value > 0)) && pricingLookup[optionKey]) {
           const option = pricingLookup[optionKey];
-          let area = floorArea;
+          const isQty = option.pricing_type === 'quantity' || option.category === 'electrical' || option.category === 'plumbing';
 
-          if (option.category === 'walls') area = wallArea;
-          else if (option.category === 'ceiling') area = ceilingArea;
-          else if (option.category === 'electrical' || option.category === 'plumbing') area = 1;
+          let area;
+          if (isQty) {
+            area = typeof value === 'number' ? value : 1;
+          } else if (option.category === 'walls') {
+            area = wallArea;
+          } else if (option.category === 'ceiling') {
+            area = ceilingArea;
+          } else {
+            area = floorArea;
+          }
 
-          const cost = area * option.price_per_sqm;
+          const cost = Math.round(area * option.price_per_sqm);
 
           detailsData.push([
             room.name,
             option.name_ru,
-            `${area.toFixed(2)} ${option.unit}`,
-            `${option.price_per_sqm} ₽`,
-            `${cost.toFixed(0)} ₽`
+            (isQty ? area : area.toFixed(2)) + ' ' + option.unit,
+            option.price_per_sqm + ' ₽',
+            cost + ' ₽'
           ]);
         }
       });
     });
 
     detailsData.push(['', '', '', '', '']);
-    detailsData.push(['', '', '', 'ИТОГО:', `${project.total_cost} ₽`]);
+    detailsData.push(['', '', '', 'ИТОГО:', project.total_cost + ' ₽']);
 
     const detailsSheet = XLSX.utils.aoa_to_sheet(detailsData);
     XLSX.utils.book_append_sheet(workbook, detailsSheet, 'Детализация');
 
-    // Generate buffer
     const buffer = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
 
-    // Send file
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-    res.setHeader('Content-Disposition', `attachment; filename="renovation-estimate-${shareId}.xlsx"`);
+    res.setHeader('Content-Disposition', 'attachment; filename="renovation-estimate-' + shareId + '.xlsx"');
     res.send(buffer);
 
   } catch (error) {
@@ -569,33 +470,19 @@ app.get('/api/export/:shareId', (req, res) => {
 // API Routes - Admin
 // ============================================
 
-/**
- * Admin login - returns session token for subsequent requests
- * Rate limited more strictly to prevent brute force
- */
 app.post('/api/admin/login', rateLimit(5, 15 * 60 * 1000), (req, res) => {
   try {
     const { password } = req.body;
     const setting = db.prepare('SELECT setting_value FROM admin_settings WHERE setting_key = ?').get('admin_password');
 
     if (setting && setting.setting_value === password) {
-      // Generate secure session token
       const token = generateSessionToken();
-      const expiresAt = Date.now() + (24 * 60 * 60 * 1000); // 24 hours
+      const expiresAt = Date.now() + (24 * 60 * 60 * 1000);
 
-      // Store session server-side
-      adminSessions.set(token, {
-        createdAt: Date.now(),
-        expiresAt: expiresAt
-      });
+      adminSessions.set(token, { createdAt: Date.now(), expiresAt: expiresAt });
 
-      res.json({
-        success: true,
-        token: token,
-        expiresAt: expiresAt
-      });
+      res.json({ success: true, token: token, expiresAt: expiresAt });
     } else {
-      // Delay response to slow down brute force attempts
       setTimeout(() => {
         res.status(401).json({ success: false, error: 'Неверный пароль' });
       }, 1000);
@@ -606,20 +493,12 @@ app.post('/api/admin/login', rateLimit(5, 15 * 60 * 1000), (req, res) => {
   }
 });
 
-/**
- * Admin logout - invalidates session
- */
 app.post('/api/admin/logout', (req, res) => {
   const token = req.headers['x-admin-token'];
-  if (token) {
-    adminSessions.delete(token);
-  }
+  if (token) adminSessions.delete(token);
   res.json({ success: true });
 });
 
-/**
- * Change admin password (PROTECTED)
- */
 app.put('/api/admin/password', requireAdmin, (req, res) => {
   try {
     const { currentPassword, newPassword } = req.body;
@@ -628,14 +507,11 @@ app.put('/api/admin/password', requireAdmin, (req, res) => {
     if (!setting || setting.setting_value !== currentPassword) {
       return res.status(401).json({ success: false, error: 'Неверный текущий пароль' });
     }
-
     if (!newPassword || newPassword.length < 6) {
       return res.status(400).json({ success: false, error: 'Пароль должен быть не менее 6 символов' });
     }
 
     db.prepare('UPDATE admin_settings SET setting_value = ? WHERE setting_key = ?').run(newPassword, 'admin_password');
-
-    // Invalidate all sessions after password change
     adminSessions.clear();
 
     res.json({ success: true, message: 'Пароль изменён. Войдите заново.' });
@@ -645,9 +521,6 @@ app.put('/api/admin/password', requireAdmin, (req, res) => {
   }
 });
 
-/**
- * Get all projects (admin - PROTECTED)
- */
 app.get('/api/admin/projects', requireAdmin, (req, res) => {
   try {
     const projects = db.prepare('SELECT share_id, name, total_cost, created_at, updated_at FROM projects ORDER BY updated_at DESC').all();
@@ -658,9 +531,6 @@ app.get('/api/admin/projects', requireAdmin, (req, res) => {
   }
 });
 
-/**
- * Verify admin session (for client-side checks)
- */
 app.get('/api/admin/verify', requireAdmin, (req, res) => {
   res.json({ success: true, isAdmin: true });
 });
@@ -669,12 +539,10 @@ app.get('/api/admin/verify', requireAdmin, (req, res) => {
 // Page Routes
 // ============================================
 
-// Serve project page
 app.get('/project/:shareId', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'project.html'));
 });
 
-// Serve admin page
 app.get('/admin', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'admin.html'));
 });
@@ -683,12 +551,11 @@ app.get('/admin', (req, res) => {
 app.listen(PORT, () => {
   console.log(`
 ╔════════════════════════════════════════════════════════════╗
-║     🏠 Калькулятор стоимости ремонта                       ║
+║     Калькулятор стоимости ремонта                          ║
 ║     Renovation Cost Estimator                               ║
 ╠════════════════════════════════════════════════════════════╣
 ║  Server running at: http://localhost:${PORT}                  ║
 ║  Admin panel: http://localhost:${PORT}/admin                  ║
-║  Default admin password: admin123                           ║
 ╚════════════════════════════════════════════════════════════╝
   `);
 });
