@@ -26,7 +26,7 @@ class Viewer3D {
     this._animFrameId = null;
 
     // Room meshes grouped by room index
-    this._roomMeshes = []; // [{floor, ceiling, walls[], wireframe}]
+    this._roomMeshes = []; // [{floor, ceiling, walls[], wireframe, furniture[]}]
     this._floorMeshes = []; // flat list of floor meshes for raycasting
 
     // Material color map (matches FloorPlanViewer)
@@ -36,6 +36,19 @@ class Viewer3D {
       linoleum: 0x7CB68E,
       default: 0xE8E0D0
     };
+
+    // Texture path map
+    this._textureMap = {
+      laminate: "/textures/laminate.jpg",
+      floor_tile: "/textures/floor_tile.jpg",
+      linoleum: "/textures/linoleum.jpg"
+    };
+    this._wallTexturePath = "/textures/wall_paint.jpg";
+    this._ceilingTexturePath = "/textures/ceiling_white.jpg";
+
+    // Texture cache
+    this._textureCache = {};
+    this._textureLoader = null;
 
     // Wall/ceiling colors
     this._wallColor = 0xf5f0eb;
@@ -49,6 +62,8 @@ class Viewer3D {
   _initScene() {
     if (this._initialized) return;
     this._initialized = true;
+
+    this._textureLoader = new THREE.TextureLoader();
 
     var w = this.container.clientWidth;
     var h = this.container.clientHeight || 400;
@@ -106,12 +121,23 @@ class Viewer3D {
   }
 
   /**
-   * Show the 3D viewer (lazy init + attach canvas + start render loop)
+   * Load or get cached texture
+   */
+  _getTexture(path) {
+    if (this._textureCache[path]) return this._textureCache[path];
+    var tex = this._textureLoader.load(path, undefined, undefined, function() {});
+    tex.wrapS = THREE.RepeatWrapping;
+    tex.wrapT = THREE.RepeatWrapping;
+    this._textureCache[path] = tex;
+    return tex;
+  }
+
+  /**
+   * Show the 3D viewer
    */
   show() {
     this._initScene();
 
-    // Attach canvas if not already in container
     if (!this.container.contains(this.renderer.domElement)) {
       this.container.appendChild(this.renderer.domElement);
     }
@@ -120,7 +146,6 @@ class Viewer3D {
     this._onResize();
     this._startRenderLoop();
 
-    // Rebuild rooms if we have data
     if (this.rooms.length > 0) {
       this._buildAllRooms();
       this.fitToView();
@@ -128,7 +153,7 @@ class Viewer3D {
   }
 
   /**
-   * Hide the 3D viewer (detach canvas + stop render loop)
+   * Hide the 3D viewer
    */
   hide() {
     this._stopRenderLoop();
@@ -148,9 +173,6 @@ class Viewer3D {
     }
   }
 
-  /**
-   * Auto-position rooms (reuses same logic as FloorPlanViewer)
-   */
   _autoPositionRooms() {
     var nextX = 0;
     for (var i = 0; i < this.rooms.length; i++) {
@@ -167,26 +189,24 @@ class Viewer3D {
     }
   }
 
-  /**
-   * Build all room 3D meshes from shapes.js vertices
-   */
   _buildAllRooms() {
     this._clearRoomMeshes();
-
     for (var i = 0; i < this.rooms.length; i++) {
       this._buildRoom(i);
     }
   }
 
-  /**
-   * Clear all room meshes from scene
-   */
   _clearRoomMeshes() {
     for (var i = 0; i < this._roomMeshes.length; i++) {
       var rm = this._roomMeshes[i];
       if (rm.floor) this.scene.remove(rm.floor);
       if (rm.ceiling) this.scene.remove(rm.ceiling);
       if (rm.wireframe) this.scene.remove(rm.wireframe);
+      if (rm.furniture) {
+        for (var f = 0; f < rm.furniture.length; f++) {
+          this.scene.remove(rm.furniture[f]);
+        }
+      }
       for (var j = 0; j < rm.walls.length; j++) {
         this.scene.remove(rm.walls[j]);
       }
@@ -196,8 +216,46 @@ class Viewer3D {
   }
 
   /**
-   * Build 3D meshes for a single room
-   * Coordinate mapping: shapes (x->right, y->down) -> Three.js (x->right, y->up, z->forward)
+   * Build a flat polygon geometry on the XZ plane from 2D vertices.
+   * Uses ShapeUtils.triangulateShape for proper triangulation.
+   * Adds UV coords: u = worldX / 2, v = worldZ / 2 (2m tile repeat).
+   */
+  _buildFlatGeometry(worldVerts2D) {
+    var positions = [];
+    var uvs = [];
+
+    // Use THREE.Shape + ShapeUtils to triangulate
+    var shape = new THREE.Shape();
+    shape.moveTo(worldVerts2D[0].x, worldVerts2D[0].z);
+    for (var i = 1; i < worldVerts2D.length; i++) {
+      shape.lineTo(worldVerts2D[i].x, worldVerts2D[i].z);
+    }
+    shape.closePath();
+
+    var shapePoints = shape.getPoints();
+    var triangles = THREE.ShapeUtils.triangulateShape(shapePoints, []);
+
+    for (var t = 0; t < triangles.length; t++) {
+      var tri = triangles[t];
+      for (var k = 0; k < 3; k++) {
+        var vi = tri[k];
+        var vx = shapePoints[vi].x;
+        var vz = shapePoints[vi].y; // Shape uses x,y; we mapped z->y
+        positions.push(vx, 0, vz);
+        uvs.push(vx / 2, vz / 2);
+      }
+    }
+
+    var geo = new THREE.BufferGeometry();
+    geo.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+    geo.setAttribute("uv", new THREE.Float32BufferAttribute(uvs, 2));
+    geo.computeVertexNormals();
+    return geo;
+  }
+
+  /**
+   * Build 3D meshes for a single room.
+   * Coordinate mapping: shapes (x->right, y->down) -> Three.js (x->right, y->up, z = -shapesY)
    */
   _buildRoom(index) {
     var room = this.rooms[index];
@@ -206,36 +264,49 @@ class Viewer3D {
     var pos = room.position || { x: 0, y: 0 };
     var isSelected = index === this.selectedIndex;
 
-    // Get floor color
     var floorColorHex = this.materialColors.default;
-    if (room._materialKey && this.materialColors[room._materialKey]) {
-      floorColorHex = this.materialColors[room._materialKey];
+    var materialKey = room._materialKey || null;
+    if (materialKey && this.materialColors[materialKey]) {
+      floorColorHex = this.materialColors[materialKey];
     }
 
-    // --- Floor ---
-    var floorShape = new THREE.Shape();
-    floorShape.moveTo(verts[0].x + pos.x, -(verts[0].y + pos.y));
-    for (var i = 1; i < verts.length; i++) {
-      floorShape.lineTo(verts[i].x + pos.x, -(verts[i].y + pos.y));
+    // Convert 2D shape vertices to Three.js XZ world coords
+    var worldVerts = [];
+    for (var i = 0; i < verts.length; i++) {
+      worldVerts.push({
+        x: verts[i].x + pos.x,
+        z: -(verts[i].y + pos.y)
+      });
     }
-    floorShape.closePath();
 
-    var floorGeo = new THREE.ShapeGeometry(floorShape);
-    var floorMat = new THREE.MeshStandardMaterial({
-      color: floorColorHex,
-      roughness: 0.8,
-      metalness: 0.1,
-      side: THREE.DoubleSide
-    });
+    // --- Floor (BufferGeometry on XZ plane at y=0) ---
+    var floorGeo = this._buildFlatGeometry(worldVerts);
+    var floorMat;
+    var texPath = materialKey ? this._textureMap[materialKey] : null;
+    if (texPath) {
+      var floorTex = this._getTexture(texPath);
+      floorMat = new THREE.MeshStandardMaterial({
+        map: floorTex,
+        roughness: 0.8,
+        metalness: 0.1,
+        side: THREE.DoubleSide
+      });
+    } else {
+      floorMat = new THREE.MeshStandardMaterial({
+        color: floorColorHex,
+        roughness: 0.8,
+        metalness: 0.1,
+        side: THREE.DoubleSide
+      });
+    }
     var floorMesh = new THREE.Mesh(floorGeo, floorMat);
-    floorMesh.rotation.x = -Math.PI / 2;
     floorMesh.position.y = 0;
     floorMesh.receiveShadow = true;
     floorMesh.userData.roomIndex = index;
     this.scene.add(floorMesh);
 
-    // --- Ceiling ---
-    var ceilingGeo = new THREE.ShapeGeometry(floorShape.clone());
+    // --- Ceiling (independent BufferGeometry at y=height) ---
+    var ceilingGeo = this._buildFlatGeometry(worldVerts);
     var ceilingMat = new THREE.MeshStandardMaterial({
       color: this._ceilingColor,
       roughness: 0.9,
@@ -243,7 +314,6 @@ class Viewer3D {
       side: THREE.DoubleSide
     });
     var ceilingMesh = new THREE.Mesh(ceilingGeo, ceilingMat);
-    ceilingMesh.rotation.x = -Math.PI / 2;
     ceilingMesh.position.y = height;
     this.scene.add(ceilingMesh);
 
@@ -261,7 +331,6 @@ class Viewer3D {
       var dx = x2 - x1;
       var dz = z2 - z1;
       var edgeLength = Math.sqrt(dx * dx + dz * dz);
-
       if (edgeLength < 0.01) continue;
 
       var wallGeo = new THREE.PlaneGeometry(edgeLength, height);
@@ -280,9 +349,8 @@ class Viewer3D {
         (z1 + z2) / 2
       );
 
-      // Rotate to align with edge direction
-      var angle = Math.atan2(dz, dx);
-      wallMesh.rotation.y = -angle + Math.PI / 2;
+      // Rotate to align with edge direction (fixed formula)
+      wallMesh.rotation.y = Math.atan2(-dz, dx);
 
       wallMesh.castShadow = true;
       wallMesh.receiveShadow = true;
@@ -297,24 +365,57 @@ class Viewer3D {
       this.scene.add(wireframe);
     }
 
-    var roomEntry = {
+    // --- Furniture ---
+    var furnitureMeshes = [];
+    if (room.furniture && room.furniture.length > 0) {
+      for (var fi = 0; fi < room.furniture.length; fi++) {
+        var fItem = room.furniture[fi];
+        var fMesh = this._buildFurnitureMesh(fItem, pos);
+        if (fMesh) {
+          this.scene.add(fMesh);
+          furnitureMeshes.push(fMesh);
+        }
+      }
+    }
+
+    this._roomMeshes.push({
       floor: floorMesh,
       ceiling: ceilingMesh,
       walls: walls,
-      wireframe: wireframe
-    };
-
-    this._roomMeshes.push(roomEntry);
+      wireframe: wireframe,
+      furniture: furnitureMeshes
+    });
     this._floorMeshes.push(floorMesh);
   }
 
   /**
-   * Create a wireframe outline for selected room
+   * Build a 3D box mesh for a furniture item
    */
+  _buildFurnitureMesh(item, roomPos) {
+    if (!item || !item.width || !item.depth) return null;
+    var w = item.width;
+    var d = item.depth;
+    var h = item.height || 0.8;
+    var geo = new THREE.BoxGeometry(w, h, d);
+    var color = item.color ? new THREE.Color(item.color) : new THREE.Color(0x8B4513);
+    var mat = new THREE.MeshStandardMaterial({
+      color: color,
+      roughness: 0.7,
+      metalness: 0.1
+    });
+    var mesh = new THREE.Mesh(geo, mat);
+    var wx = (item.x || 0) + roomPos.x;
+    var wz = -((item.y || 0) + roomPos.y);
+    var rot = item.rotation || 0;
+    mesh.position.set(wx, h / 2, wz);
+    mesh.rotation.y = -rot;
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    return mesh;
+  }
+
   _createSelectionWireframe(verts, pos, height) {
     var group = new THREE.Group();
-
-    // Bottom edge loop
     var bottomPts = [];
     for (var i = 0; i < verts.length; i++) {
       bottomPts.push(new THREE.Vector3(verts[i].x + pos.x, 0.01, -(verts[i].y + pos.y)));
@@ -325,14 +426,12 @@ class Viewer3D {
     var lineMat = new THREE.LineBasicMaterial({ color: this._selectedWireColor, linewidth: 2 });
     group.add(new THREE.Line(bottomGeo, lineMat));
 
-    // Top edge loop
     var topPts = bottomPts.map(function(p) {
       return new THREE.Vector3(p.x, height, p.z);
     });
     var topGeo = new THREE.BufferGeometry().setFromPoints(topPts);
     group.add(new THREE.Line(topGeo, lineMat.clone()));
 
-    // Vertical edges
     for (var j = 0; j < verts.length; j++) {
       var vertPts = [
         new THREE.Vector3(verts[j].x + pos.x, 0.01, -(verts[j].y + pos.y)),
@@ -341,13 +440,9 @@ class Viewer3D {
       var vertGeo = new THREE.BufferGeometry().setFromPoints(vertPts);
       group.add(new THREE.Line(vertGeo, lineMat.clone()));
     }
-
     return group;
   }
 
-  /**
-   * Select a room by index
-   */
   selectRoom(index) {
     this.selectedIndex = index;
     if (this._initialized) {
@@ -355,9 +450,6 @@ class Viewer3D {
     }
   }
 
-  /**
-   * Deselect all rooms
-   */
   deselectAll() {
     this.selectedIndex = -1;
     if (this._initialized) {
@@ -368,9 +460,6 @@ class Viewer3D {
     }
   }
 
-  /**
-   * Update material color for a room
-   */
   updateRoomMaterial(index, materialKey) {
     if (this.rooms[index]) {
       this.rooms[index]._materialKey = materialKey;
@@ -380,9 +469,6 @@ class Viewer3D {
     }
   }
 
-  /**
-   * Zoom in (move camera closer)
-   */
   zoomIn() {
     if (!this.camera || !this.controls) return;
     var dir = new THREE.Vector3();
@@ -391,9 +477,6 @@ class Viewer3D {
     this.controls.update();
   }
 
-  /**
-   * Zoom out (move camera farther)
-   */
   zoomOut() {
     if (!this.camera || !this.controls) return;
     var dir = new THREE.Vector3();
@@ -402,12 +485,8 @@ class Viewer3D {
     this.controls.update();
   }
 
-  /**
-   * Fit all rooms into view
-   */
   fitToView() {
     if (!this.camera || this.rooms.length === 0) return;
-
     var minX = Infinity, minZ = Infinity, maxX = -Infinity, maxZ = -Infinity;
     var maxHeight = 0;
 
@@ -416,12 +495,10 @@ class Viewer3D {
       var pos = room.position || { x: 0, y: 0 };
       var bb = RoomShapes.getBoundingBox(room);
       var h = room.height || 2.7;
-
       var rx1 = pos.x + bb.minX;
       var rz1 = -(pos.y + bb.maxY);
       var rx2 = pos.x + bb.maxX;
       var rz2 = -(pos.y + bb.minY);
-
       if (rx1 < minX) minX = rx1;
       if (rz1 < minZ) minZ = rz1;
       if (rx2 > maxX) maxX = rx2;
@@ -434,52 +511,35 @@ class Viewer3D {
     var sizeX = maxX - minX;
     var sizeZ = maxZ - minZ;
     var maxSize = Math.max(sizeX, sizeZ, maxHeight);
-
-    var distance = maxSize * 1.5;
-    distance = Math.max(distance, 5);
+    var distance = Math.max(maxSize * 1.5, 5);
 
     this.camera.position.set(
       centerX + distance * 0.7,
       distance * 0.8,
       centerZ + distance * 0.7
     );
-
     this.controls.target.set(centerX, maxHeight / 2, centerZ);
     this.controls.update();
   }
 
-  /**
-   * Handle click for room selection via raycaster
-   */
   _onClick(e) {
     if (!this.renderer || !this.camera) return;
-
     var rect = this.renderer.domElement.getBoundingClientRect();
     this.mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
     this.mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
-
     this.raycaster.setFromCamera(this.mouse, this.camera);
-
     var intersects = this.raycaster.intersectObjects(this._floorMeshes);
-
     if (intersects.length > 0) {
       var roomIndex = intersects[0].object.userData.roomIndex;
       if (roomIndex !== undefined) {
         this.selectRoom(roomIndex);
-        if (this.onRoomSelect) {
-          this.onRoomSelect(roomIndex);
-        }
+        if (this.onRoomSelect) this.onRoomSelect(roomIndex);
       }
     } else {
-      if (!this.readOnly) {
-        this.deselectAll();
-      }
+      if (!this.readOnly) this.deselectAll();
     }
   }
 
-  /**
-   * Start render loop
-   */
   _startRenderLoop() {
     var self = this;
     function animate() {
@@ -492,9 +552,6 @@ class Viewer3D {
     animate();
   }
 
-  /**
-   * Stop render loop
-   */
   _stopRenderLoop() {
     if (this._animFrameId) {
       cancelAnimationFrame(this._animFrameId);
@@ -502,9 +559,6 @@ class Viewer3D {
     }
   }
 
-  /**
-   * Handle window resize
-   */
   _onResize() {
     if (!this.container || !this.renderer || !this.camera) return;
     var w = this.container.clientWidth;
@@ -514,9 +568,6 @@ class Viewer3D {
     this.renderer.setSize(w, h);
   }
 
-  /**
-   * Dispose of all Three.js resources
-   */
   dispose() {
     this._stopRenderLoop();
     this._clearRoomMeshes();

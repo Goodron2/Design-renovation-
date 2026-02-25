@@ -1,7 +1,7 @@
 /**
  * Room Shape Geometry Module (UMD)
  * Shared between client (Konva floor plan) and server (Excel export)
- * Supports: rectangle, l_shape, t_shape
+ * Supports: rectangle, l_shape, t_shape, custom
  */
 (function(root, factory) {
   if (typeof module !== "undefined" && module.exports) {
@@ -37,6 +37,16 @@
   function getRoomVertices(room) {
     var r = normalizeRoom(room);
     var p = r.params;
+
+    // Custom shape: return stored vertices directly
+    if (r.shape === "custom") {
+      if (p.vertices && p.vertices.length >= 3) {
+        return p.vertices.map(function(v) { return { x: v.x, y: v.y }; });
+      }
+      // Fallback to a 4x5 rectangle if no vertices
+      return [{x:0,y:0}, {x:4,y:0}, {x:4,y:5}, {x:0,y:5}];
+    }
+
     var w = p.width;
     var l = p.length;
 
@@ -45,7 +55,6 @@
       var cl = p.cutLength || 1;
       var corner = p.cutCorner || "top_right";
 
-      // L-shape: rectangle with one corner cut out (6 vertices)
       if (corner === "top_right") {
         return [
           {x:0,y:0}, {x:w-cw,y:0}, {x:w-cw,y:cl},
@@ -74,7 +83,6 @@
       var sl = p.stemLength || 1;
       var pos = p.stemPosition || "bottom_center";
 
-      // T-shape: rectangle with a stem (8 vertices)
       if (pos === "bottom_center") {
         var stemX = (w - sw) / 2;
         return [
@@ -113,11 +121,25 @@
   }
 
   /**
-   * Calculate room floor area from shape params (more efficient than shoelace for known shapes)
+   * Calculate room floor area from shape params
+   * Uses shoelace formula for custom shapes
    */
   function calculateRoomArea(room) {
     var r = normalizeRoom(room);
     var p = r.params;
+
+    if (r.shape === "custom") {
+      // Shoelace formula
+      var verts = getRoomVertices(r);
+      var area = 0;
+      for (var i = 0; i < verts.length; i++) {
+        var j = (i + 1) % verts.length;
+        area += verts[i].x * verts[j].y;
+        area -= verts[j].x * verts[i].y;
+      }
+      return Math.abs(area) / 2;
+    }
+
     var w = p.width;
     var l = p.length;
 

@@ -88,6 +88,9 @@
   </div>
 
   <script src="/js/shapes.js"></script>
+  <script src="/js/furniture.js"></script>
+  <script src="/js/snapping.js"></script>
+  <script src="/js/walldraw.js"></script>
   <script src="/js/floorplan.js"></script>
   <script src="/js/viewer3d.js"></script>
   <script>
@@ -172,21 +175,17 @@
 
     function switchProjectView(viewMode) {
       if (viewMode === '3d') {
-        // Hide Konva
         var konvaContent = document.querySelector('#floorplanViewer .konvajs-content');
         if (konvaContent) konvaContent.style.display = 'none';
 
-        // Lazy-init 3D viewer
         if (!viewer3d) {
           viewer3d = new Viewer3D('floorplanViewer', { readOnly: true });
         }
         viewer3d.setRooms(project.rooms);
         viewer3d.show();
       } else {
-        // Hide 3D
         if (viewer3d) viewer3d.hide();
 
-        // Show Konva
         var konvaContent = document.querySelector('#floorplanViewer .konvajs-content');
         if (konvaContent) konvaContent.style.display = 'block';
 
@@ -265,7 +264,23 @@
           }
         });
 
-        const dimText = p.width + '\u043C \u00D7 ' + p.length + '\u043C \u00D7 ' + room.height + '\u043C';
+        // Dimension text: support custom shapes
+        var dimText;
+        if (room.shape === 'custom') {
+          dimText = floorArea.toFixed(1) + ' м\u00B2, h=' + room.height + 'м';
+        } else {
+          dimText = p.width + '\u043C \u00D7 ' + p.length + '\u043C \u00D7 ' + room.height + '\u043C';
+        }
+
+        // Furniture list
+        var furnitureHtml = '';
+        if (room.furniture && room.furniture.length > 0) {
+          furnitureHtml = '<h4 style="margin: 16px 0 8px;">Мебель:</h4><ul style="margin:0;padding-left:20px;">';
+          room.furniture.forEach(function(f) {
+            furnitureHtml += '<li>' + (f.name || f.id) + ' (' + f.width + '\u00D7' + f.depth + 'м)</li>';
+          });
+          furnitureHtml += '</ul>';
+        }
 
         const card = document.createElement('div');
         card.className = 'room-details';
@@ -291,6 +306,7 @@
               ).join('') +
               '</tbody></table>'
             : '<p class="text-muted">Работы не выбраны</p>') +
+            furnitureHtml +
           '</div>';
 
         container.appendChild(card);

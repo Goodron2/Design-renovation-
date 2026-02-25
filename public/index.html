@@ -10,6 +10,32 @@
   <!-- Three.js for 3D view -->
   <script src="https://unpkg.com/three@0.152.2/build/three.min.js"></script>
   <script src="https://unpkg.com/three@0.152.2/examples/js/controls/OrbitControls.js"></script>
+  <style>
+    /* Furniture Catalog Panel */
+    .furniture-category { margin-bottom: 8px; }
+    .furniture-category-title {
+      cursor: pointer; padding: 8px 12px; margin: 0;
+      font-size: 0.85rem; font-weight: 600;
+      color: var(--text-color); background: var(--bg-color);
+      border-radius: var(--radius-sm, 4px); transition: background 0.2s;
+    }
+    .furniture-category-title:hover { background: var(--border-color); }
+    .furniture-items { padding: 4px 0; }
+    .furniture-item {
+      display: flex; align-items: center; gap: 10px;
+      padding: 6px 12px; cursor: pointer;
+      border-radius: var(--radius-sm, 4px); transition: background 0.15s;
+    }
+    .furniture-item:hover { background: var(--bg-color); }
+    .furniture-item-preview { flex-shrink: 0; border: 1px solid var(--border-color, #e5e7eb); }
+    .furniture-item-info { display: flex; flex-direction: column; gap: 2px; }
+    .furniture-item-name { font-size: 0.82rem; font-weight: 500; }
+    .furniture-item-dims { font-size: 0.72rem; color: var(--text-muted, #94a3b8); }
+    .btn-danger { background: #ef4444 !important; color: white !important; }
+    .btn-danger:hover { background: #dc2626 !important; }
+    #furniturePanel { padding: 16px; overflow-y: auto; }
+    #furniturePanel h3 { font-size: 1rem; margin: 0 0 12px; }
+  </style>
 </head>
 <body>
   <div class="app-container">
@@ -30,7 +56,10 @@
       <aside class="panel panel-left">
         <div class="panel-header">
           <h2>Комнаты</h2>
-          <button id="addRoomBtn" class="btn btn-small btn-primary">+ Добавить</button>
+          <div style="display:flex;gap:6px">
+            <button id="drawRoomBtn" class="btn btn-small btn-secondary">Нарисовать</button>
+            <button id="addRoomBtn" class="btn btn-small btn-primary">+ Добавить</button>
+          </div>
         </div>
 
         <div id="roomsList" class="rooms-list">
@@ -50,9 +79,10 @@
               <option value="Коридор">Коридор</option>
               <option value="Детская">Детская</option>
               <option value="Кабинет">Кабинет</option>
+              <option value="Комната">Комната</option>
             </select>
           </div>
-          <div class="form-group">
+          <div id="shapeGroup" class="form-group">
             <label for="roomShape">Форма</label>
             <select id="roomShape" class="form-control">
               <option value="rectangle">Прямоугольник</option>
@@ -60,14 +90,16 @@
               <option value="t_shape">Т-образная</option>
             </select>
           </div>
-          <div class="form-row">
-            <div class="form-group">
-              <label for="roomWidth">Ширина (м)</label>
-              <input type="number" id="roomWidth" class="form-control" value="4" min="1" max="20" step="0.1">
-            </div>
-            <div class="form-group">
-              <label for="roomLength">Длина (м)</label>
-              <input type="number" id="roomLength" class="form-control" value="5" min="1" max="20" step="0.1">
+          <div id="dimensionFields">
+            <div class="form-row">
+              <div class="form-group">
+                <label for="roomWidth">Ширина (м)</label>
+                <input type="number" id="roomWidth" class="form-control" value="4" min="1" max="20" step="0.1">
+              </div>
+              <div class="form-group">
+                <label for="roomLength">Длина (м)</label>
+                <input type="number" id="roomLength" class="form-control" value="5" min="1" max="20" step="0.1">
+              </div>
             </div>
           </div>
           <div class="form-group">
@@ -153,6 +185,7 @@
       <aside class="panel panel-right">
         <div class="tabs">
           <button class="tab-btn active" data-tab="options">Опции</button>
+          <button class="tab-btn" data-tab="furniture">Мебель</button>
           <button class="tab-btn" data-tab="chat">AI Чат</button>
         </div>
 
@@ -192,6 +225,13 @@
               <div id="plumbingOptions" class="options-group"></div>
               <div class="category-subtotal" id="subtotal_plumbing"></div>
             </div>
+          </div>
+        </div>
+
+        <!-- Furniture Tab -->
+        <div id="furnitureTab" class="tab-content">
+          <div id="furniturePanel">
+            <p class="text-muted">Выберите комнату, затем добавьте мебель</p>
           </div>
         </div>
 
@@ -257,6 +297,9 @@
 
   <!-- JavaScript -->
   <script src="/js/shapes.js"></script>
+  <script src="/js/furniture.js"></script>
+  <script src="/js/snapping.js"></script>
+  <script src="/js/walldraw.js"></script>
   <script src="/js/floorplan.js"></script>
   <script src="/js/viewer3d.js"></script>
   <script src="/js/calculator.js"></script>
