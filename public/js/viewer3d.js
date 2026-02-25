@@ -183,8 +183,8 @@ class Viewer3D {
       }
       var bb = RoomShapes.getBoundingBox(room);
       var roomRight = room.position.x + bb.width;
-      if (roomRight + 1 > nextX) {
-        nextX = roomRight + 1;
+      if (roomRight > nextX) {
+        nextX = roomRight;
       }
     }
   }
@@ -222,6 +222,7 @@ class Viewer3D {
    */
   _buildFlatGeometry(worldVerts2D) {
     var positions = [];
+    var normals = [];
     var uvs = [];
 
     // Use THREE.Shape + ShapeUtils to triangulate
@@ -242,14 +243,15 @@ class Viewer3D {
         var vx = shapePoints[vi].x;
         var vz = shapePoints[vi].y; // Shape uses x,y; we mapped z->y
         positions.push(vx, 0, vz);
+        normals.push(0, 1, 0); // Explicit UP normal for floor/ceiling
         uvs.push(vx / 2, vz / 2);
       }
     }
 
     var geo = new THREE.BufferGeometry();
     geo.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+    geo.setAttribute("normal", new THREE.Float32BufferAttribute(normals, 3));
     geo.setAttribute("uv", new THREE.Float32BufferAttribute(uvs, 2));
-    geo.computeVertexNormals();
     return geo;
   }
 

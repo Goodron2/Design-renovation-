@@ -187,8 +187,20 @@ function setupEventListeners() {
   elements.shareProjectBtn.addEventListener('click', shareProject);
   elements.copyLinkBtn.addEventListener('click', copyShareLink);
 
-  // Furniture key handler
+  // Global keyboard shortcuts
   document.addEventListener('keydown', function(e) {
+    // Don't handle keys when typing in inputs
+    var tag = e.target.tagName;
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+
+    // Delete selected room
+    if (e.key === 'Delete' && selectedRoomIndex >= 0) {
+      e.preventDefault();
+      deleteRoom(selectedRoomIndex);
+      return;
+    }
+
+    // Furniture keys (R to rotate, Del handled above)
     if (floorPlan && floorPlan.handleFurnitureKey(e)) {
       e.preventDefault();
     }

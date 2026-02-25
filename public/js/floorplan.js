@@ -178,8 +178,8 @@ class FloorPlanViewer {
       }
       var bb = RoomShapes.getBoundingBox(room);
       var roomRight = room.position.x + bb.width;
-      if (roomRight + 1 > nextX) {
-        nextX = roomRight + 1;
+      if (roomRight > nextX) {
+        nextX = roomRight; // No gap — rooms share walls
       }
     }
   }

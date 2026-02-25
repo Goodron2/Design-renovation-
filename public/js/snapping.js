@@ -4,7 +4,7 @@
  * - Room overlap / collision detection
  */
 var RoomSnapping = (function() {
-  var SNAP_THRESHOLD = 0.3; // meters
+  var SNAP_THRESHOLD = 0.8; // meters — generous snap for connecting rooms
 
   /**
    * Get world-space edges for a room
