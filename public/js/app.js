@@ -7,6 +7,8 @@
 let rooms = [];
 let selectedRoomIndex = -1;
 let floorPlan = null;
+let viewer3d = null;
+let currentView = '2d';
 let calculator = null;
 let chat = null;
 let currentProjectId = null;
@@ -79,6 +81,13 @@ function normalizeRoom(room) {
 }
 
 /**
+ * Get the currently active viewer (2D or 3D)
+ */
+function activeViewer() {
+  return currentView === '3d' && viewer3d ? viewer3d : floorPlan;
+}
+
+/**
  * Initialize application
  */
 async function init() {
@@ -129,10 +138,22 @@ function setupEventListeners() {
   elements.saveRoomBtn.addEventListener('click', saveRoom);
   elements.cancelRoomBtn.addEventListener('click', hideRoomEditor);
 
-  // Zoom controls
-  elements.zoomInBtn.addEventListener('click', () => floorPlan.zoomIn());
-  elements.zoomOutBtn.addEventListener('click', () => floorPlan.zoomOut());
-  elements.fitViewBtn.addEventListener('click', () => floorPlan.fitToView());
+  // Zoom controls — delegate to whichever viewer is active
+  elements.zoomInBtn.addEventListener('click', () => activeViewer().zoomIn());
+  elements.zoomOutBtn.addEventListener('click', () => activeViewer().zoomOut());
+  elements.fitViewBtn.addEventListener('click', () => activeViewer().fitToView());
+
+  // 2D/3D view toggle
+  var toggleBtns = document.querySelectorAll('#viewToggle .view-toggle-btn');
+  toggleBtns.forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      var viewMode = btn.dataset.view;
+      if (viewMode === currentView) return;
+      switchView(viewMode);
+      // Update active button state
+      toggleBtns.forEach(function(b) { b.classList.toggle('active', b.dataset.view === viewMode); });
+    });
+  });
 
   // Shape selector toggle
   elements.roomShape.addEventListener('change', () => {
@@ -152,6 +173,53 @@ function setupEventListeners() {
   elements.exportExcelBtn.addEventListener('click', exportToExcel);
   elements.shareProjectBtn.addEventListener('click', shareProject);
   elements.copyLinkBtn.addEventListener('click', copyShareLink);
+}
+
+/**
+ * Switch between 2D and 3D views
+ */
+function switchView(viewMode) {
+  currentView = viewMode;
+
+  if (viewMode === '3d') {
+    // Hide Konva canvas
+    var konvaContent = document.querySelector('#floorplanViewer .konvajs-content');
+    if (konvaContent) konvaContent.style.display = 'none';
+
+    // Lazy-init Viewer3D
+    if (!viewer3d) {
+      viewer3d = new Viewer3D('floorplanViewer');
+      viewer3d.onRoomSelect = function(index) {
+        if (index >= 0) {
+          selectRoom(index);
+        } else {
+          deselectRoom();
+        }
+      };
+    }
+
+    // Sync rooms and selection to 3D
+    viewer3d.setRooms(rooms);
+    if (selectedRoomIndex >= 0) {
+      viewer3d.selectRoom(selectedRoomIndex);
+    }
+    viewer3d.show();
+  } else {
+    // Hide 3D
+    if (viewer3d) {
+      viewer3d.hide();
+    }
+
+    // Show Konva canvas
+    var konvaContent = document.querySelector('#floorplanViewer .konvajs-content');
+    if (konvaContent) konvaContent.style.display = 'block';
+
+    // Trigger resize to fix Konva dimensions
+    if (floorPlan && floorPlan.stage) {
+      floorPlan._onResize();
+      floorPlan.stage.batchDraw();
+    }
+  }
 }
 
 /**
@@ -307,6 +375,11 @@ function selectRoom(index) {
   // Update floor plan selection
   floorPlan.selectRoom(index);
 
+  // Sync 3D viewer if it exists
+  if (viewer3d) {
+    viewer3d.selectRoom(index);
+  }
+
   // Update room info
   const area = RoomShapes.calculateRoomArea(room).toFixed(1);
   const p = room.params;
@@ -334,6 +407,12 @@ function selectRoom(index) {
  */
 function deselectRoom() {
   selectedRoomIndex = -1;
+
+  // Sync 3D viewer if it exists
+  if (viewer3d) {
+    viewer3d.deselectAll();
+  }
+
   elements.noRoomSelected.classList.remove('hidden');
   elements.optionsPanel.classList.add('hidden');
   elements.currentRoomInfo.textContent = 'Выберите комнату';
@@ -350,11 +429,20 @@ function updateFloorPlan() {
     }
     floorPlan.setRooms(rooms);
     floorPlan.fitToView();
+
+    // Sync 3D viewer if active
+    if (viewer3d && currentView === '3d') {
+      viewer3d.setRooms(rooms);
+      viewer3d.fitToView();
+    }
   } else {
     if (elements.viewerPlaceholder) {
       elements.viewerPlaceholder.style.display = 'block';
     }
     floorPlan.setRooms([]);
+    if (viewer3d && currentView === '3d') {
+      viewer3d.setRooms([]);
+    }
   }
 }
 

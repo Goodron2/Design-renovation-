@@ -7,6 +7,9 @@
   <link rel="stylesheet" href="/css/styles.css">
   <!-- Konva.js for 2D floor plan -->
   <script src="https://unpkg.com/konva@9/konva.min.js"></script>
+  <!-- Three.js for 3D view -->
+  <script src="https://unpkg.com/three@0.152.2/build/three.min.js"></script>
+  <script src="https://unpkg.com/three@0.152.2/examples/js/controls/OrbitControls.js"></script>
 </head>
 <body>
   <div class="app-container">
@@ -127,6 +130,10 @@
         <div class="viewer-header">
           <h2>Планировка</h2>
           <div class="viewer-controls">
+            <div class="view-toggle" id="viewToggle">
+              <button class="view-toggle-btn active" data-view="2d">2D</button>
+              <button class="view-toggle-btn" data-view="3d">3D</button>
+            </div>
             <button id="zoomInBtn" class="btn btn-small">+</button>
             <button id="zoomOutBtn" class="btn btn-small">−</button>
             <button id="fitViewBtn" class="btn btn-small">⊞</button>
@@ -251,6 +258,7 @@
   <!-- JavaScript -->
   <script src="/js/shapes.js"></script>
   <script src="/js/floorplan.js"></script>
+  <script src="/js/viewer3d.js"></script>
   <script src="/js/calculator.js"></script>
   <script src="/js/chat.js"></script>
   <script src="/js/app.js"></script>

@@ -6,6 +6,9 @@
   <title>Проект ремонта | Просмотр</title>
   <link rel="stylesheet" href="/css/styles.css">
   <script src="https://unpkg.com/konva@9/konva.min.js"></script>
+  <!-- Three.js for 3D view -->
+  <script src="https://unpkg.com/three@0.152.2/build/three.min.js"></script>
+  <script src="https://unpkg.com/three@0.152.2/examples/js/controls/OrbitControls.js"></script>
 </head>
 <body>
   <div class="project-view-container">
@@ -55,8 +58,12 @@
 
       <!-- Floor Plan Preview -->
       <div class="admin-card">
-        <div class="admin-card-header">
+        <div class="admin-card-header" style="display: flex; align-items: center; justify-content: space-between;">
           <h2>Планировка</h2>
+          <div class="view-toggle" id="projectViewToggle">
+            <button class="view-toggle-btn active" data-view="2d">2D</button>
+            <button class="view-toggle-btn" data-view="3d">3D</button>
+          </div>
         </div>
         <div class="admin-card-body" style="padding: 0;">
           <div id="floorplanViewer" class="project-floorplan"></div>
@@ -82,11 +89,14 @@
 
   <script src="/js/shapes.js"></script>
   <script src="/js/floorplan.js"></script>
+  <script src="/js/viewer3d.js"></script>
   <script>
     // State
     let project = null;
     let pricingOptions = {};
     let floorPlan = null;
+    let viewer3d = null;
+    let currentView = '2d';
 
     const categoryNames = {
       walls: 'Стены',
@@ -127,6 +137,7 @@
 
           renderProject();
           renderChatHistory(data.chatHistory);
+          setupViewToggle();
 
           document.getElementById('downloadExcelBtn').href = '/api/export/' + projectId;
           document.getElementById('editProjectBtn').addEventListener('click', () => {
@@ -144,6 +155,46 @@
     function showError() {
       document.getElementById('loadingState').classList.add('hidden');
       document.getElementById('errorState').classList.remove('hidden');
+    }
+
+    function setupViewToggle() {
+      var toggleBtns = document.querySelectorAll('#projectViewToggle .view-toggle-btn');
+      toggleBtns.forEach(function(btn) {
+        btn.addEventListener('click', function() {
+          var viewMode = btn.dataset.view;
+          if (viewMode === currentView) return;
+          currentView = viewMode;
+          toggleBtns.forEach(function(b) { b.classList.toggle('active', b.dataset.view === viewMode); });
+          switchProjectView(viewMode);
+        });
+      });
+    }
+
+    function switchProjectView(viewMode) {
+      if (viewMode === '3d') {
+        // Hide Konva
+        var konvaContent = document.querySelector('#floorplanViewer .konvajs-content');
+        if (konvaContent) konvaContent.style.display = 'none';
+
+        // Lazy-init 3D viewer
+        if (!viewer3d) {
+          viewer3d = new Viewer3D('floorplanViewer', { readOnly: true });
+        }
+        viewer3d.setRooms(project.rooms);
+        viewer3d.show();
+      } else {
+        // Hide 3D
+        if (viewer3d) viewer3d.hide();
+
+        // Show Konva
+        var konvaContent = document.querySelector('#floorplanViewer .konvajs-content');
+        if (konvaContent) konvaContent.style.display = 'block';
+
+        if (floorPlan && floorPlan.stage) {
+          floorPlan._onResize();
+          floorPlan.stage.batchDraw();
+        }
+      }
     }
 
     function renderProject() {
