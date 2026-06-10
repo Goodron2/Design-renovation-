@@ -3,213 +3,426 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Калькулятор ремонта | Планировщик стоимости</title>
-  <link rel="stylesheet" href="/css/styles.css">
-  <!-- Three.js for 3D visualization -->
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-  <!-- OrbitControls for 3D camera control -->
-  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+  <title>МастерДом — ремонт квартир и домов под ключ в Москве и области</title>
+  <meta name="description" content="Строительная компания МастерДом: ремонт квартир и домов под ключ, косметический и капитальный ремонт. Договор, фиксированная смета, гарантия 2 года. Бесплатный замер. Звоните: 8 916 143-78-79.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/landing.css">
 </head>
 <body>
-  <div class="app-container">
-    <!-- Header -->
-    <header class="header">
-      <div class="header-content">
-        <h1 class="logo">Планировщик ремонта</h1>
-        <div class="header-actions">
-          <button id="saveProjectBtn" class="btn btn-primary">Сохранить</button>
-          <a href="/admin" class="btn btn-secondary">Админ</a>
+
+  <!-- ============ Header ============ -->
+  <header class="site-header">
+    <div class="container">
+      <a href="/" class="logo" aria-label="МастерДом — на главную">
+        <svg width="34" height="34" viewBox="0 0 34 34" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <path d="M4 16L17 5l13 11" stroke="#f59e0b" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M8 14.5V28h18V14.5" stroke="#fff" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M14 28v-8h6v8" stroke="#f59e0b" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        Мастер<span>Дом</span>
+      </a>
+
+      <nav class="main-nav" id="mainNav">
+        <a href="#services">Услуги</a>
+        <a href="#ai-design">AI-дизайн</a>
+        <a href="#process">Как мы работаем</a>
+        <a href="#prices">Цены</a>
+        <a href="#contacts">Контакты</a>
+      </nav>
+
+      <div class="header-contact">
+        <a href="tel:+79161437879" class="header-phone">
+          8 916 143-78-79
+          <small>Александр · ежедневно 9:00–21:00</small>
+        </a>
+        <a href="#contacts" class="btn btn-accent btn-header">Бесплатный замер</a>
+        <button class="burger" id="burgerBtn" aria-label="Меню">
+          <span></span><span></span><span></span>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- ============ Hero ============ -->
+  <section class="hero">
+    <div class="container">
+      <div class="hero-grid">
+        <div>
+          <div class="hero-badge">⭐ Договор · фиксированная смета · гарантия 2 года</div>
+          <h1>Ремонт квартир и домов <em>под ключ</em> — без стресса и переплат</h1>
+          <p class="hero-sub">Берём на себя всё: от замера и сметы до финишной уборки. Смета не меняется после подписания договора, а сроки прописаны с неустойкой за каждый день просрочки.</p>
+          <div class="hero-actions">
+            <a href="tel:+79161437879" class="btn btn-accent">📞 Позвонить Александру</a>
+            <a href="/calculator" class="btn btn-outline">Рассчитать стоимость онлайн</a>
+          </div>
+        </div>
+        <div class="hero-visual" aria-hidden="true">
+          <svg viewBox="0 0 520 420" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <!-- backdrop card -->
+            <rect x="40" y="40" width="440" height="340" rx="24" fill="#1f242d" stroke="#343c49" stroke-width="1.5"/>
+            <!-- house -->
+            <path d="M130 220L260 110l130 110" stroke="#f59e0b" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
+            <path d="M165 195v125h190V195" stroke="#e8e6e1" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
+            <path d="M235 320v-70h50v70" stroke="#f59e0b" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
+            <rect x="190" y="225" width="32" height="32" rx="4" stroke="#9aa1ab" stroke-width="5"/>
+            <rect x="298" y="225" width="32" height="32" rx="4" stroke="#9aa1ab" stroke-width="5"/>
+            <!-- roller -->
+            <rect x="330" y="86" width="74" height="30" rx="10" fill="#f59e0b"/>
+            <path d="M404 101h26v30h-12" stroke="#e8e6e1" stroke-width="6" stroke-linecap="round"/>
+            <path d="M418 131v34" stroke="#e8e6e1" stroke-width="6" stroke-linecap="round"/>
+            <!-- sparkle accents -->
+            <circle cx="105" cy="105" r="5" fill="#f59e0b"/>
+            <circle cx="430" cy="330" r="6" fill="#f59e0b" opacity="0.6"/>
+            <circle cx="90" cy="300" r="4" fill="#9aa1ab" opacity="0.6"/>
+          </svg>
         </div>
       </div>
-    </header>
-
-    <!-- Main Content -->
-    <main class="main-content">
-      <!-- Left Panel - Room Configuration -->
-      <aside class="panel panel-left">
-        <div class="panel-header">
-          <h2>Комнаты</h2>
-          <button id="addRoomBtn" class="btn btn-small btn-primary">+ Добавить</button>
-        </div>
-
-        <div id="roomsList" class="rooms-list">
-          <!-- Rooms will be added dynamically -->
-        </div>
-
-        <!-- Room Editor Modal (inline) -->
-        <div id="roomEditor" class="room-editor hidden">
-          <h3 id="roomEditorTitle">Новая комната</h3>
-          <div class="form-group">
-            <label for="roomName">Название</label>
-            <select id="roomName" class="form-control">
-              <option value="Гостиная">Гостиная</option>
-              <option value="Спальня">Спальня</option>
-              <option value="Кухня">Кухня</option>
-              <option value="Ванная">Ванная</option>
-              <option value="Коридор">Коридор</option>
-              <option value="Детская">Детская</option>
-              <option value="Кабинет">Кабинет</option>
-            </select>
-          </div>
-          <div class="form-row">
-            <div class="form-group">
-              <label for="roomWidth">Ширина (м)</label>
-              <input type="number" id="roomWidth" class="form-control" value="4" min="1" max="20" step="0.1">
-            </div>
-            <div class="form-group">
-              <label for="roomLength">Длина (м)</label>
-              <input type="number" id="roomLength" class="form-control" value="5" min="1" max="20" step="0.1">
-            </div>
-          </div>
-          <div class="form-group">
-            <label for="roomHeight">Высота (м)</label>
-            <input type="number" id="roomHeight" class="form-control" value="2.7" min="2" max="5" step="0.1">
-          </div>
-          <div class="form-actions">
-            <button id="saveRoomBtn" class="btn btn-primary">Сохранить</button>
-            <button id="cancelRoomBtn" class="btn btn-secondary">Отмена</button>
-          </div>
-        </div>
-      </aside>
-
-      <!-- Center - 3D Viewer -->
-      <section class="panel panel-center">
-        <div class="viewer-header">
-          <h2>3D Просмотр</h2>
-          <div class="viewer-controls">
-            <button id="resetViewBtn" class="btn btn-small">Сбросить вид</button>
-          </div>
-        </div>
-        <div id="viewer3d" class="viewer-3d">
-          <div class="viewer-placeholder">
-            <p>Добавьте комнату для начала</p>
-          </div>
-        </div>
-        <div class="viewer-info">
-          <span id="currentRoomInfo">Выберите комнату</span>
-        </div>
-      </section>
-
-      <!-- Right Panel - Options & Pricing -->
-      <aside class="panel panel-right">
-        <div class="tabs">
-          <button class="tab-btn active" data-tab="options">Опции</button>
-          <button class="tab-btn" data-tab="chat">AI Чат</button>
-        </div>
-
-        <!-- Options Tab -->
-        <div id="optionsTab" class="tab-content active">
-          <div id="noRoomSelected" class="no-selection">
-            <p>Выберите комнату для настройки опций ремонта</p>
-          </div>
-
-          <div id="optionsPanel" class="options-panel hidden">
-            <div class="options-section">
-              <h3>Стены</h3>
-              <div id="wallOptions" class="options-group"></div>
-            </div>
-
-            <div class="options-section">
-              <h3>Полы</h3>
-              <div id="floorOptions" class="options-group"></div>
-            </div>
-
-            <div class="options-section">
-              <h3>Потолок</h3>
-              <div id="ceilingOptions" class="options-group"></div>
-            </div>
-
-            <div class="options-section">
-              <h3>Электрика</h3>
-              <div id="electricalOptions" class="options-group"></div>
-            </div>
-
-            <div class="options-section">
-              <h3>Сантехника</h3>
-              <div id="plumbingOptions" class="options-group"></div>
-            </div>
-
-            <!-- Color Picker -->
-            <div class="options-section">
-              <h3>Цвета</h3>
-              <div class="color-pickers">
-                <div class="color-picker-group">
-                  <label>Стены</label>
-                  <input type="color" id="wallColor" value="#f5f5f5">
-                </div>
-                <div class="color-picker-group">
-                  <label>Пол</label>
-                  <input type="color" id="floorColor" value="#8B4513">
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- Chat Tab -->
-        <div id="chatTab" class="tab-content">
-          <div class="chat-container">
-            <div id="chatMessages" class="chat-messages">
-              <div class="chat-message assistant">
-                <p>Здравствуйте! Я ваш помощник по планированию ремонта. Задавайте вопросы о материалах, стоимости или попросите рекомендации.</p>
-              </div>
-            </div>
-            <div class="chat-input-container">
-              <input type="text" id="chatInput" class="chat-input" placeholder="Введите сообщение...">
-              <button id="sendChatBtn" class="btn btn-primary">Отправить</button>
-            </div>
-          </div>
-        </div>
-      </aside>
-    </main>
-
-    <!-- Bottom Panel - Summary & Total -->
-    <footer class="footer-panel">
-      <div class="summary-container">
-        <div class="summary-stats">
-          <div class="stat">
-            <span class="stat-label">Комнат:</span>
-            <span id="totalRooms" class="stat-value">0</span>
-          </div>
-          <div class="stat">
-            <span class="stat-label">Площадь:</span>
-            <span id="totalArea" class="stat-value">0 м²</span>
-          </div>
-        </div>
-        <div class="total-cost">
-          <span class="total-label">Итого:</span>
-          <span id="totalCost" class="total-value">0 ₽</span>
-        </div>
-        <div class="summary-actions">
-          <button id="exportExcelBtn" class="btn btn-secondary" disabled>Экспорт Excel</button>
-          <button id="shareProjectBtn" class="btn btn-primary" disabled>Поделиться</button>
-        </div>
+      <div class="hero-stats">
+        <div class="hero-stat"><b>12<i>+</i></b><span>лет опыта в ремонте</span></div>
+        <div class="hero-stat"><b>340<i>+</i></b><span>сданных объектов</span></div>
+        <div class="hero-stat"><b>2 <i>года</i></b><span>гарантия на все работы</span></div>
+        <div class="hero-stat"><b>0 <i>₽</i></b><span>выезд на замер и смета</span></div>
       </div>
-    </footer>
+    </div>
+  </section>
 
-    <!-- Share Modal -->
-    <div id="shareModal" class="modal hidden">
-      <div class="modal-content">
-        <div class="modal-header">
-          <h3>Поделиться проектом</h3>
-          <button class="modal-close" onclick="closeShareModal()">&times;</button>
-        </div>
-        <div class="modal-body">
-          <p>Ваш проект сохранён. Скопируйте ссылку и отправьте подрядчику:</p>
-          <div class="share-link-container">
-            <input type="text" id="shareLink" class="form-control" readonly>
-            <button id="copyLinkBtn" class="btn btn-primary">Копировать</button>
+  <!-- ============ Services ============ -->
+  <section class="section" id="services">
+    <div class="container">
+      <div class="section-head">
+        <span class="section-label">Наши услуги</span>
+        <h2>Делаем ремонт любой сложности</h2>
+        <p>От освежающего косметического ремонта до полной перепланировки квартиры или загородного дома.</p>
+      </div>
+      <div class="services-grid">
+        <div class="service-card">
+          <div class="service-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11l9-8 9 8"/><path d="M5 9.5V21h14V9.5"/><path d="M10 21v-6h4v6"/></svg>
           </div>
-          <p class="share-note">Подрядчик сможет просмотреть детали и скачать смету в Excel.</p>
+          <h3>Ремонт квартир под ключ</h3>
+          <p>Полный цикл: демонтаж, черновые и чистовые работы, электрика, сантехника, финишная отделка и уборка.</p>
+          <div class="service-price">от 14 000 ₽/м²</div>
+        </div>
+        <div class="service-card">
+          <div class="service-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 20h20"/><path d="M4 20V8l8-5 8 5v12"/><rect x="9" y="13" width="6" height="7"/><path d="M9 9h.01M15 9h.01"/></svg>
+          </div>
+          <h3>Ремонт домов и коттеджей</h3>
+          <p>Внутренняя отделка загородных домов: от инженерных коммуникаций до дизайнерской отделки всех помещений.</p>
+          <div class="service-price">от 16 000 ₽/м²</div>
+        </div>
+        <div class="service-card">
+          <div class="service-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M18 3l3 3-12 12H6v-3L18 3z"/><path d="M14 7l3 3"/><path d="M3 21h18"/></svg>
+          </div>
+          <h3>Косметический ремонт</h3>
+          <p>Быстрое обновление: стены, потолки, полы, замена дверей и плинтусов. Идеально перед продажей или сдачей.</p>
+          <div class="service-price">от 6 500 ₽/м²</div>
+        </div>
+        <div class="service-card">
+          <div class="service-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a4.5 4.5 0 00-6.4 6.4L3 18v3h3l5.3-5.3a4.5 4.5 0 006.4-6.4L15 12l-3-3 2.7-2.7z"/></svg>
+          </div>
+          <h3>Капитальный ремонт</h3>
+          <p>Замена стяжки, штукатурки, проводки и труб, перепланировка с согласованием. Квартира как новая.</p>
+          <div class="service-price">от 11 000 ₽/м²</div>
+        </div>
+        <div class="service-card">
+          <div class="service-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12h16M4 12a8 8 0 0116 0M7 12v7a1 1 0 001 1h8a1 1 0 001-1v-7"/><path d="M12 4v2"/></svg>
+          </div>
+          <h3>Ванные комнаты под ключ</h3>
+          <p>Гидроизоляция, плитка, сантехника, тёплый пол и инсталляции. Сдаём готовую ванную за 3–4 недели.</p>
+          <div class="service-price">от 90 000 ₽</div>
+        </div>
+        <div class="service-card">
+          <div class="service-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L4.5 12.5H11L9 22l8.5-10.5H13L13 2z"/></svg>
+          </div>
+          <h3>Электрика и сантехника</h3>
+          <p>Полная замена проводки и труб, сборка электрощитов, монтаж отопления и водоснабжения с гарантией.</p>
+          <div class="service-price">от 1 200 ₽/точка</div>
         </div>
       </div>
     </div>
-  </div>
+  </section>
 
-  <!-- JavaScript -->
-  <script src="/js/room3d.js"></script>
-  <script src="/js/calculator.js"></script>
-  <script src="/js/chat.js"></script>
-  <script src="/js/app.js"></script>
+  <!-- ============ AI Design ============ -->
+  <section class="section section-dark" id="ai-design">
+    <div class="container">
+      <div class="ai-grid">
+        <div>
+          <span class="section-label">AI-дизайн и онлайн-инструменты</span>
+          <div class="section-head" style="margin-bottom: 36px;">
+            <h2>Увидьте свой ремонт до начала работ</h2>
+            <p>Наш бесплатный онлайн-сервис помогает спланировать ремонт ещё до звонка: соберите квартиру по комнатам, подберите отделку и сразу узнайте стоимость.</p>
+          </div>
+          <div class="ai-feature">
+            <div class="ai-feature-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l9 5-9 5-9-5 9-5z"/><path d="M3 13l9 5 9-5"/></svg>
+            </div>
+            <div>
+              <h3>3D-визуализация комнат</h3>
+              <p>Покрутите свою будущую комнату в 3D, поэкспериментируйте с цветом стен и пола.</p>
+            </div>
+          </div>
+          <div class="ai-feature">
+            <div class="ai-feature-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.5 8.5 0 01-12.4 7.6L3 21l1.9-5.6A8.5 8.5 0 1121 11.5z"/></svg>
+            </div>
+            <div>
+              <h3>AI-консультант по ремонту</h3>
+              <p>Умный помощник подскажет, какие материалы выбрать и на чём можно сэкономить без потери качества.</p>
+            </div>
+          </div>
+          <div class="ai-feature">
+            <div class="ai-feature-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="2" width="16" height="20" rx="2"/><path d="M8 6h8M8 10h8M8 14h4"/></svg>
+            </div>
+            <div>
+              <h3>Смета онлайн за 5 минут</h3>
+              <p>Выберите работы по каждой комнате — калькулятор посчитает стоимость и выгрузит смету в Excel.</p>
+            </div>
+          </div>
+          <div class="ai-actions">
+            <a href="/calculator" class="btn btn-accent">Открыть калькулятор</a>
+          </div>
+        </div>
+        <div class="ai-visual" aria-hidden="true">
+          <svg viewBox="0 0 460 360" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <!-- browser chrome -->
+            <rect x="10" y="10" width="440" height="340" rx="16" fill="#16191f" stroke="#3a4250" stroke-width="1.5"/>
+            <circle cx="36" cy="36" r="6" fill="#ef4444"/>
+            <circle cx="58" cy="36" r="6" fill="#f59e0b"/>
+            <circle cx="80" cy="36" r="6" fill="#22c55e"/>
+            <line x1="10" y1="58" x2="450" y2="58" stroke="#3a4250" stroke-width="1.5"/>
+            <!-- 3D room wireframe -->
+            <path d="M70 270V130l90-45 170 30v140" stroke="#f59e0b" stroke-width="3" stroke-linejoin="round"/>
+            <path d="M70 270l90-40 170 25" stroke="#f59e0b" stroke-width="3" stroke-linejoin="round"/>
+            <path d="M160 85v145" stroke="#9aa1ab" stroke-width="2.5" stroke-dasharray="7 7"/>
+            <path d="M330 115v140" stroke="#9aa1ab" stroke-width="2.5" stroke-dasharray="7 7"/>
+            <!-- furniture hint -->
+            <rect x="195" y="195" width="70" height="34" rx="6" stroke="#e8e6e1" stroke-width="2.5" transform="skewY(4)"/>
+            <!-- chat bubble -->
+            <rect x="300" y="240" width="130" height="84" rx="14" fill="#2a313c" stroke="#f59e0b" stroke-width="2"/>
+            <circle cx="324" cy="268" r="10" fill="#f59e0b"/>
+            <path d="M320 268l3 3 5-6" stroke="#16191f" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+            <line x1="344" y1="262" x2="412" y2="262" stroke="#9aa1ab" stroke-width="4" stroke-linecap="round"/>
+            <line x1="344" y1="276" x2="398" y2="276" stroke="#9aa1ab" stroke-width="4" stroke-linecap="round"/>
+            <line x1="318" y1="300" x2="412" y2="300" stroke="#6b7280" stroke-width="4" stroke-linecap="round"/>
+            <!-- price label -->
+            <rect x="60" y="290" width="170" height="40" rx="10" fill="#f59e0b"/>
+            <text x="145" y="316" text-anchor="middle" font-family="Manrope, sans-serif" font-size="19" font-weight="800" fill="#1a1304">≈ 1 240 000 ₽</text>
+          </svg>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ Process ============ -->
+  <section class="section section-white" id="process">
+    <div class="container">
+      <div class="section-head centered">
+        <span class="section-label">Как мы работаем</span>
+        <h2>5 простых шагов до готового ремонта</h2>
+      </div>
+      <div class="process-grid">
+        <div class="process-step">
+          <div class="process-num">1</div>
+          <h3>Заявка и консультация</h3>
+          <p>Позвоните или напишите — обсудим задачу и сориентируем по стоимости.</p>
+        </div>
+        <div class="process-step">
+          <div class="process-num">2</div>
+          <h3>Бесплатный замер</h3>
+          <p>Приезжаем на объект, делаем замеры и фиксируем все пожелания.</p>
+        </div>
+        <div class="process-step">
+          <div class="process-num">3</div>
+          <h3>Смета и договор</h3>
+          <p>Подробная смета с ценами за каждый вид работ. После подписания она не меняется.</p>
+        </div>
+        <div class="process-step">
+          <div class="process-num">4</div>
+          <h3>Ремонт</h3>
+          <p>Работает постоянная бригада, прораб присылает фотоотчёты на каждом этапе.</p>
+        </div>
+        <div class="process-step">
+          <div class="process-num">5</div>
+          <h3>Сдача и гарантия</h3>
+          <p>Принимаете работу по чек-листу. Даём гарантию 2 года на все работы.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ Advantages ============ -->
+  <section class="section section-dark">
+    <div class="container">
+      <div class="section-head">
+        <span class="section-label">Почему мы</span>
+        <h2>Ремонт, за который не страшно платить</h2>
+      </div>
+      <div class="adv-grid">
+        <div class="adv-card">
+          <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 12l2 2 4-4"/><path d="M12 3l7 3v5c0 5-3.5 8.5-7 10-3.5-1.5-7-5-7-10V6l7-3z"/></svg>
+          <h3>Официальный договор</h3>
+          <p>Фиксируем стоимость, сроки и неустойку за просрочку. Никаких «доплат по ходу».</p>
+        </div>
+        <div class="adv-card">
+          <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg>
+          <h3>Соблюдаем сроки</h3>
+          <p>График работ — приложение к договору. За каждый день просрочки платим неустойку.</p>
+        </div>
+        <div class="adv-card">
+          <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="14" rx="2"/><path d="M3 10h18M8 21h8M12 18v3"/></svg>
+          <h3>Фотоотчёты каждый этап</h3>
+          <p>Видите ход работ, не приезжая на объект: фото, видео и отчёт прораба в мессенджере.</p>
+        </div>
+        <div class="adv-card">
+          <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 7L9 18l-5-5"/></svg>
+          <h3>Свои мастера, не субподряд</h3>
+          <p>Постоянные бригады отделочников, электриков и сантехников. За результат отвечаем сами.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ Prices ============ -->
+  <section class="section" id="prices">
+    <div class="container">
+      <div class="section-head centered">
+        <span class="section-label">Цены</span>
+        <h2>Сколько стоит ремонт</h2>
+        <p>Ориентировочные цены за квадратный метр с работой. Точную смету составим бесплатно после замера.</p>
+      </div>
+      <div class="price-grid">
+        <div class="price-card">
+          <h3>Косметический</h3>
+          <div class="price-from">обновление отделки</div>
+          <div class="price-value">от 6 500 <small>₽/м²</small></div>
+          <ul>
+            <li>Поклейка обоев или покраска стен</li>
+            <li>Укладка ламината или линолеума</li>
+            <li>Потолки: покраска или натяжные</li>
+            <li>Замена розеток и выключателей</li>
+            <li>Срок: от 3 недель</li>
+          </ul>
+          <a href="/calculator" class="btn btn-light-outline">Рассчитать онлайн</a>
+        </div>
+        <div class="price-card featured">
+          <div class="price-tag">Выбирают чаще всего</div>
+          <h3>Капитальный</h3>
+          <div class="price-from">полное обновление квартиры</div>
+          <div class="price-value">от 11 000 <small>₽/м²</small></div>
+          <ul>
+            <li>Всё из косметического ремонта</li>
+            <li>Выравнивание стен, стяжка пола</li>
+            <li>Замена электрики и сантехники</li>
+            <li>Перепланировка с согласованием</li>
+            <li>Срок: от 2 месяцев</li>
+          </ul>
+          <a href="/calculator" class="btn btn-accent">Рассчитать онлайн</a>
+        </div>
+        <div class="price-card">
+          <h3>Под ключ</h3>
+          <div class="price-from">заехать и жить</div>
+          <div class="price-value">от 14 000 <small>₽/м²</small></div>
+          <ul>
+            <li>Всё из капитального ремонта</li>
+            <li>Дизайн-проект и 3D-визуализация</li>
+            <li>Закупка и доставка материалов</li>
+            <li>Финишная уборка и вывоз мусора</li>
+            <li>Срок: от 2,5 месяцев</li>
+          </ul>
+          <a href="/calculator" class="btn btn-light-outline">Рассчитать онлайн</a>
+        </div>
+      </div>
+      <p class="price-note">Хотите точную цифру? <a href="/calculator">Соберите смету в онлайн-калькуляторе</a> или позвоните — посчитаем за один разговор.</p>
+    </div>
+  </section>
+
+  <!-- ============ Contacts ============ -->
+  <section class="section section-dark" id="contacts">
+    <div class="container">
+      <div class="contact-grid">
+        <div class="contact-info">
+          <span class="section-label">Контакты</span>
+          <h2>Обсудим ваш ремонт?</h2>
+          <p>Позвоните или напишите в мессенджер — ответим на вопросы, сориентируем по цене и договоримся о бесплатном замере в удобное время.</p>
+          <ul class="contact-points">
+            <li>
+              <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg>
+              Работаем ежедневно с 9:00 до 21:00
+            </li>
+            <li>
+              <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s7-5.5 7-11a7 7 0 10-14 0c0 5.5 7 11 7 11z"/><circle cx="12" cy="10" r="2.5"/></svg>
+              Москва и Московская область, выезд на замер бесплатно
+            </li>
+            <li>
+              <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.5 8.5 0 01-12.4 7.6L3 21l1.9-5.6A8.5 8.5 0 1121 11.5z"/></svg>
+              Удобнее переписка? Напишите в WhatsApp или Telegram
+            </li>
+          </ul>
+        </div>
+        <div class="contact-card">
+          <div class="contact-person">
+            <div class="contact-avatar">А</div>
+            <div>
+              <b>Александр</b>
+              <span>руководитель, ответит лично</span>
+            </div>
+          </div>
+          <a href="tel:+79161437879" class="contact-phone">8 916 143-78-79</a>
+          <div class="contact-hours">Ежедневно с 9:00 до 21:00. Если не взяли трубку — перезвоним.</div>
+          <div class="contact-buttons">
+            <a href="https://wa.me/79161437879" target="_blank" rel="noopener" class="btn btn-whatsapp">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a10 10 0 00-8.6 15.1L2 22l5-1.3A10 10 0 1012 2zm5 13.9c-.2.6-1.2 1.2-1.7 1.2-.4.1-1 .1-1.6-.1-.4-.1-.9-.3-1.5-.5-2.6-1.1-4.3-3.8-4.4-4-.1-.2-1.1-1.4-1.1-2.7s.7-1.9.9-2.2c.2-.2.5-.3.7-.3h.5c.2 0 .4 0 .6.4.2.5.7 1.8.8 1.9.1.1.1.3 0 .5l-.4.6c-.1.2-.3.3-.1.6.1.3.7 1.1 1.4 1.8.9.9 1.7 1.1 2 1.3.3.1.4.1.6-.1l.7-.9c.2-.3.4-.2.7-.1l1.7.8c.3.1.5.2.5.3.1.1.1.7-.1 1.4z"/></svg>
+              WhatsApp
+            </a>
+            <a href="https://t.me/+79161437879" target="_blank" rel="noopener" class="btn btn-telegram">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M21.9 4.6L19 19.3c-.2 1-.8 1.2-1.6.8l-4.5-3.3-2.2 2.1c-.2.2-.4.4-.9.4l.3-4.6L18.6 7c.4-.3-.1-.5-.6-.2L7.7 13.3l-4.4-1.4c-1-.3-1-.9.2-1.4L20.6 3.5c.8-.3 1.5.2 1.3 1.1z"/></svg>
+              Telegram
+            </a>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ Footer ============ -->
+  <footer class="site-footer">
+    <div class="container footer-grid">
+      <a href="/" class="logo">
+        <svg width="26" height="26" viewBox="0 0 34 34" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <path d="M4 16L17 5l13 11" stroke="#f59e0b" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M8 14.5V28h18V14.5" stroke="#fff" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M14 28v-8h6v8" stroke="#f59e0b" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        Мастер<span>Дом</span>
+      </a>
+      <div class="footer-links">
+        <a href="#services">Услуги</a>
+        <a href="#prices">Цены</a>
+        <a href="/calculator">Калькулятор</a>
+        <a href="#contacts">Контакты</a>
+      </div>
+      <a href="tel:+79161437879" class="footer-phone">8 916 143-78-79</a>
+    </div>
+  </footer>
+
+  <!-- Floating call button (mobile) -->
+  <a href="tel:+79161437879" class="fab-call" aria-label="Позвонить">
+    <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.9v3a2 2 0 01-2.2 2 19.8 19.8 0 01-8.6-3 19.5 19.5 0 01-6-6 19.8 19.8 0 01-3-8.7A2 2 0 014.1 2h3a2 2 0 012 1.7c.1 1 .4 2 .7 2.9a2 2 0 01-.5 2.1L8 10a16 16 0 006 6l1.3-1.3a2 2 0 012.1-.4c1 .3 2 .5 3 .7a2 2 0 011.6 2z"/></svg>
+  </a>
+
+  <script>
+    const burger = document.getElementById('burgerBtn');
+    const nav = document.getElementById('mainNav');
+    burger.addEventListener('click', () => nav.classList.toggle('open'));
+    nav.querySelectorAll('a').forEach(a => a.addEventListener('click', () => nav.classList.remove('open')));
+  </script>
 </body>
 </html>

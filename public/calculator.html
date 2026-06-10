@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Онлайн-калькулятор ремонта с 3D-визуализацией | МастерДом</title>
+  <meta name="description" content="Рассчитайте стоимость ремонта квартиры онлайн: добавьте комнаты, выберите работы, посмотрите 3D-визуализацию и скачайте смету в Excel.">
+  <link rel="stylesheet" href="/css/styles.css">
+  <!-- Three.js for 3D visualization -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <!-- OrbitControls for 3D camera control -->
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+</head>
+<body>
+  <div class="app-container">
+    <!-- Header -->
+    <header class="header">
+      <div class="header-content">
+        <h1 class="logo"><a href="/" style="color: inherit; text-decoration: none;">МастерДом</a> · Калькулятор ремонта</h1>
+        <div class="header-actions">
+          <button id="saveProjectBtn" class="btn btn-primary">Сохранить</button>
+          <a href="/" class="btn btn-secondary">На главную</a>
+        </div>
+      </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="main-content">
+      <!-- Left Panel - Room Configuration -->
+      <aside class="panel panel-left">
+        <div class="panel-header">
+          <h2>Комнаты</h2>
+          <button id="addRoomBtn" class="btn btn-small btn-primary">+ Добавить</button>
+        </div>
+
+        <div id="roomsList" class="rooms-list">
+          <!-- Rooms will be added dynamically -->
+        </div>
+
+        <!-- Room Editor Modal (inline) -->
+        <div id="roomEditor" class="room-editor hidden">
+          <h3 id="roomEditorTitle">Новая комната</h3>
+          <div class="form-group">
+            <label for="roomName">Название</label>
+            <select id="roomName" class="form-control">
+              <option value="Гостиная">Гостиная</option>
+              <option value="Спальня">Спальня</option>
+              <option value="Кухня">Кухня</option>
+              <option value="Ванная">Ванная</option>
+              <option value="Коридор">Коридор</option>
+              <option value="Детская">Детская</option>
+              <option value="Кабинет">Кабинет</option>
+            </select>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label for="roomWidth">Ширина (м)</label>
+              <input type="number" id="roomWidth" class="form-control" value="4" min="1" max="20" step="0.1">
+            </div>
+            <div class="form-group">
+              <label for="roomLength">Длина (м)</label>
+              <input type="number" id="roomLength" class="form-control" value="5" min="1" max="20" step="0.1">
+            </div>
+          </div>
+          <div class="form-group">
+            <label for="roomHeight">Высота (м)</label>
+            <input type="number" id="roomHeight" class="form-control" value="2.7" min="2" max="5" step="0.1">
+          </div>
+          <div class="form-actions">
+            <button id="saveRoomBtn" class="btn btn-primary">Сохранить</button>
+            <button id="cancelRoomBtn" class="btn btn-secondary">Отмена</button>
+          </div>
+        </div>
+      </aside>
+
+      <!-- Center - 3D Viewer -->
+      <section class="panel panel-center">
+        <div class="viewer-header">
+          <h2>3D Просмотр</h2>
+          <div class="viewer-controls">
+            <button id="resetViewBtn" class="btn btn-small">Сбросить вид</button>
+          </div>
+        </div>
+        <div id="viewer3d" class="viewer-3d">
+          <div class="viewer-placeholder">
+            <p>Добавьте комнату для начала</p>
+          </div>
+        </div>
+        <div class="viewer-info">
+          <span id="currentRoomInfo">Выберите комнату</span>
+        </div>
+      </section>
+
+      <!-- Right Panel - Options & Pricing -->
+      <aside class="panel panel-right">
+        <div class="tabs">
+          <button class="tab-btn active" data-tab="options">Опции</button>
+          <button class="tab-btn" data-tab="chat">AI Чат</button>
+        </div>
+
+        <!-- Options Tab -->
+        <div id="optionsTab" class="tab-content active">
+          <div id="noRoomSelected" class="no-selection">
+            <p>Выберите комнату для настройки опций ремонта</p>
+          </div>
+
+          <div id="optionsPanel" class="options-panel hidden">
+            <div class="options-section">
+              <h3>Стены</h3>
+              <div id="wallOptions" class="options-group"></div>
+            </div>
+
+            <div class="options-section">
+              <h3>Полы</h3>
+              <div id="floorOptions" class="options-group"></div>
+            </div>
+
+            <div class="options-section">
+              <h3>Потолок</h3>
+              <div id="ceilingOptions" class="options-group"></div>
+            </div>
+
+            <div class="options-section">
+              <h3>Электрика</h3>
+              <div id="electricalOptions" class="options-group"></div>
+            </div>
+
+            <div class="options-section">
+              <h3>Сантехника</h3>
+              <div id="plumbingOptions" class="options-group"></div>
+            </div>
+
+            <!-- Color Picker -->
+            <div class="options-section">
+              <h3>Цвета</h3>
+              <div class="color-pickers">
+                <div class="color-picker-group">
+                  <label>Стены</label>
+                  <input type="color" id="wallColor" value="#f5f5f5">
+                </div>
+                <div class="color-picker-group">
+                  <label>Пол</label>
+                  <input type="color" id="floorColor" value="#8B4513">
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Chat Tab -->
+        <div id="chatTab" class="tab-content">
+          <div class="chat-container">
+            <div id="chatMessages" class="chat-messages">
+              <div class="chat-message assistant">
+                <p>Здравствуйте! Я ваш помощник по планированию ремонта. Задавайте вопросы о материалах, стоимости или попросите рекомендации.</p>
+              </div>
+            </div>
+            <div class="chat-input-container">
+              <input type="text" id="chatInput" class="chat-input" placeholder="Введите сообщение...">
+              <button id="sendChatBtn" class="btn btn-primary">Отправить</button>
+            </div>
+          </div>
+        </div>
+      </aside>
+    </main>
+
+    <!-- Bottom Panel - Summary & Total -->
+    <footer class="footer-panel">
+      <div class="summary-container">
+        <div class="summary-stats">
+          <div class="stat">
+            <span class="stat-label">Комнат:</span>
+            <span id="totalRooms" class="stat-value">0</span>
+          </div>
+          <div class="stat">
+            <span class="stat-label">Площадь:</span>
+            <span id="totalArea" class="stat-value">0 м²</span>
+          </div>
+        </div>
+        <div class="total-cost">
+          <span class="total-label">Итого:</span>
+          <span id="totalCost" class="total-value">0 ₽</span>
+        </div>
+        <div class="summary-actions">
+          <button id="exportExcelBtn" class="btn btn-secondary" disabled>Экспорт Excel</button>
+          <button id="shareProjectBtn" class="btn btn-primary" disabled>Поделиться</button>
+        </div>
+      </div>
+    </footer>
+
+    <!-- Share Modal -->
+    <div id="shareModal" class="modal hidden">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h3>Поделиться проектом</h3>
+          <button class="modal-close" onclick="closeShareModal()">&times;</button>
+        </div>
+        <div class="modal-body">
+          <p>Ваш проект сохранён. Скопируйте ссылку и отправьте подрядчику:</p>
+          <div class="share-link-container">
+            <input type="text" id="shareLink" class="form-control" readonly>
+            <button id="copyLinkBtn" class="btn btn-primary">Копировать</button>
+          </div>
+          <p class="share-note">Подрядчик сможет просмотреть детали и скачать смету в Excel.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- JavaScript -->
+  <script src="/js/room3d.js"></script>
+  <script src="/js/calculator.js"></script>
+  <script src="/js/chat.js"></script>
+  <script src="/js/app.js"></script>
+</body>
+</html>

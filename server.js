@@ -669,6 +669,11 @@ app.get('/api/admin/verify', requireAdmin, (req, res) => {
 // Page Routes
 // ============================================
 
+// Serve calculator page
+app.get('/calculator', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'calculator.html'));
+});
+
 // Serve project page
 app.get('/project/:shareId', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'project.html'));
@@ -683,12 +688,11 @@ app.get('/admin', (req, res) => {
 app.listen(PORT, () => {
   console.log(`
 ╔════════════════════════════════════════════════════════════╗
-║     🏠 Калькулятор стоимости ремонта                       ║
-║     Renovation Cost Estimator                               ║
+║     🏠 МастерДом — ремонт квартир и домов                  ║
 ╠════════════════════════════════════════════════════════════╣
-║  Server running at: http://localhost:${PORT}                  ║
-║  Admin panel: http://localhost:${PORT}/admin                  ║
-║  Default admin password: admin123                           ║
+║  Сайт:        http://localhost:${PORT}                        ║
+║  Калькулятор: http://localhost:${PORT}/calculator             ║
+║  Админ-панель: http://localhost:${PORT}/admin                 ║
 ╚════════════════════════════════════════════════════════════╝
   `);
 });
