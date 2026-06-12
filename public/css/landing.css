@@ -609,6 +609,21 @@ a { color: inherit; }
   color: var(--text-on-dark-muted);
   margin-bottom: 28px;
 }
+.contact-address {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  font-size: 15px;
+  color: var(--text-on-dark-muted);
+  margin: -12px 0 26px;
+}
+.contact-address svg {
+  width: 20px;
+  height: 20px;
+  stroke: var(--accent);
+  flex-shrink: 0;
+  margin-top: 2px;
+}
 .contact-buttons { display: flex; gap: 14px; flex-wrap: wrap; }
 .btn-whatsapp {
   background: #25d366;
@@ -650,6 +665,53 @@ a { color: inherit; }
   margin-top: 3px;
 }
 
+/* ============ Geography ============ */
+.geo-grid {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 12px;
+  max-width: 900px;
+  margin: 0 auto;
+}
+.geo-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 11px 20px;
+  border-radius: 999px;
+  background: var(--white);
+  border: 1px solid var(--border);
+  font-size: 15.5px;
+  font-weight: 700;
+  color: var(--text);
+  transition: border-color 0.15s, transform 0.15s;
+}
+.geo-pill:hover {
+  border-color: var(--accent-dark);
+  transform: translateY(-2px);
+}
+.geo-pill::before {
+  content: '';
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+.geo-pill-main {
+  background: var(--dark);
+  border-color: var(--dark);
+  color: var(--white);
+}
+.geo-pill-main::before { background: var(--accent); }
+.geo-note {
+  margin-top: 30px;
+  text-align: center;
+  font-size: 15.5px;
+  color: var(--text-muted);
+}
+.geo-note a { color: var(--accent-dark); font-weight: 700; }
+
 /* ============ Footer ============ */
 .site-footer {
   background: #101319;
@@ -671,12 +733,22 @@ a { color: inherit; }
   text-decoration: none;
 }
 .footer-links a:hover { color: var(--white); }
+.footer-contact {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  text-align: right;
+}
 .footer-phone {
   color: var(--white);
   font-weight: 800;
   text-decoration: none;
 }
 .footer-phone:hover { color: var(--accent); }
+.footer-address {
+  font-size: 13px;
+  color: var(--text-on-dark-muted);
+}
 
 /* ============ Floating call button (mobile) ============ */
 .fab-call {
