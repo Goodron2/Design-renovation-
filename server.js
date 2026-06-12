@@ -11,6 +11,8 @@ const path = require('path');
 const crypto = require('crypto');
 const { v4: uuidv4 } = require('uuid');
 const db = require('./database');
+const ai = require('./ai');
+const blog = require('./blog');
 
 // Load environment variables from .env file (if exists)
 try {
@@ -28,18 +30,18 @@ const SESSION_SECRET = process.env.ADMIN_SESSION_SECRET || crypto.randomBytes(32
 // In-memory session store (use Redis in production for multiple servers)
 const adminSessions = new Map();
 
-// Rate limiting store (simple in-memory, use Redis in production)
-const rateLimitStore = new Map();
-
 // ============================================
 // Security Middleware
 // ============================================
 
 /**
  * Rate limiting middleware
- * Limits requests per IP to prevent abuse
+ * Limits requests per IP to prevent abuse.
+ * Each limiter keeps its own store - otherwise the global limiter's
+ * counter would trip the stricter per-route limits (e.g. login).
  */
 function rateLimit(maxRequests = 100, windowMs = 15 * 60 * 1000) {
+  const rateLimitStore = new Map();
   return (req, res, next) => {
     const ip = req.ip || req.connection.remoteAddress;
     const now = Date.now();
@@ -666,6 +668,194 @@ app.get('/api/admin/verify', requireAdmin, (req, res) => {
 });
 
 // ============================================
+// Public Blog (SEO articles)
+// ============================================
+
+app.get('/blog', (req, res) => {
+  try {
+    const articles = db.prepare(
+      "SELECT slug, title, description, preview_svg, created_at FROM articles WHERE status = 'published' ORDER BY created_at DESC"
+    ).all();
+    res.send(blog.renderBlogList(articles));
+  } catch (error) {
+    console.error('Error rendering blog:', error);
+    res.status(500).send('Ошибка загрузки блога');
+  }
+});
+
+app.get('/blog/:slug', (req, res) => {
+  try {
+    const article = db.prepare(
+      "SELECT * FROM articles WHERE slug = ? AND status = 'published'"
+    ).get(req.params.slug);
+    if (!article) {
+      return res.status(404).send(blog.renderBlogList(
+        db.prepare("SELECT slug, title, description, preview_svg, created_at FROM articles WHERE status = 'published' ORDER BY created_at DESC").all()
+      ));
+    }
+    const others = db.prepare(
+      "SELECT slug, title, created_at FROM articles WHERE status = 'published' AND id != ? ORDER BY created_at DESC LIMIT 4"
+    ).all(article.id);
+    res.send(blog.renderArticle(article, others));
+  } catch (error) {
+    console.error('Error rendering article:', error);
+    res.status(500).send('Ошибка загрузки статьи');
+  }
+});
+
+// Dynamic sitemap including published articles
+app.get('/sitemap.xml', (req, res) => {
+  try {
+    const articles = db.prepare(
+      "SELECT slug, updated_at FROM articles WHERE status = 'published' ORDER BY created_at DESC"
+    ).all();
+    res.type('application/xml').send(blog.renderSitemap(articles));
+  } catch (error) {
+    console.error('Error rendering sitemap:', error);
+    res.status(500).send('');
+  }
+});
+
+// ============================================
+// Article Studio (hidden, admin-only)
+// ============================================
+//
+// The studio page lives OUTSIDE public/ so the static middleware can
+// never serve it. It is reachable only via the secret path below
+// (configure STUDIO_PATH in .env), is marked noindex, and every API
+// endpoint requires an admin session. AI keys never leave the server.
+
+const STUDIO_PATH = process.env.STUDIO_PATH || '/studio-x9k2m';
+
+app.get(STUDIO_PATH, (req, res) => {
+  res.setHeader('X-Robots-Tag', 'noindex, nofollow');
+  res.sendFile(path.join(__dirname, 'private', 'studio.html'));
+});
+
+// noindex for admin surfaces
+app.use(['/admin', '/api'], (req, res, next) => {
+  res.setHeader('X-Robots-Tag', 'noindex, nofollow');
+  next();
+});
+
+/** Which providers are configured (booleans only - no key material). */
+app.get('/api/studio/providers', requireAdmin, (req, res) => {
+  res.json({ success: true, providers: ai.getProviders(), studioPath: STUDIO_PATH });
+});
+
+/** Suggest article topics. */
+app.post('/api/studio/suggest', requireAdmin, rateLimit(20, 15 * 60 * 1000), async (req, res) => {
+  try {
+    const existing = db.prepare('SELECT title FROM articles ORDER BY created_at DESC LIMIT 40').all().map(r => r.title);
+    const topics = await ai.suggestTopics({ provider: req.body.provider, existing });
+    res.json({ success: true, topics });
+  } catch (error) {
+    console.error('Error suggesting topics:', error.message);
+    res.status(502).json({ success: false, error: error.message });
+  }
+});
+
+/** Generate a full article (does not save - returns draft for review). */
+app.post('/api/studio/generate', requireAdmin, rateLimit(10, 15 * 60 * 1000), async (req, res) => {
+  try {
+    const { topic, extra, provider } = req.body;
+    if (!topic || !topic.trim()) {
+      return res.status(400).json({ success: false, error: 'Укажите тему статьи' });
+    }
+    const article = await ai.generateArticle({ topic: topic.trim(), extra, provider });
+    res.json({ success: true, article });
+  } catch (error) {
+    console.error('Error generating article:', error.message);
+    res.status(502).json({ success: false, error: error.message });
+  }
+});
+
+/** List all articles (drafts included). */
+app.get('/api/studio/articles', requireAdmin, (req, res) => {
+  const articles = db.prepare(
+    'SELECT id, slug, title, description, status, provider, created_at, updated_at FROM articles ORDER BY created_at DESC'
+  ).all();
+  res.json({ success: true, articles });
+});
+
+/** Get one article with full content. */
+app.get('/api/studio/articles/:id', requireAdmin, (req, res) => {
+  const article = db.prepare('SELECT * FROM articles WHERE id = ?').get(req.params.id);
+  if (!article) return res.status(404).json({ success: false, error: 'Статья не найдена' });
+  res.json({ success: true, article });
+});
+
+function uniqueSlug(base, excludeId) {
+  let slug = ai.slugify(base);
+  let i = 2;
+  while (true) {
+    const row = excludeId
+      ? db.prepare('SELECT id FROM articles WHERE slug = ? AND id != ?').get(slug, excludeId)
+      : db.prepare('SELECT id FROM articles WHERE slug = ?').get(slug);
+    if (!row) return slug;
+    slug = `${ai.slugify(base)}-${i++}`;
+  }
+}
+
+function articlePayload(body) {
+  return {
+    title: ai.stripEmDashes(String(body.title || '').trim()),
+    description: ai.stripEmDashes(String(body.description || '').trim()),
+    keywords: ai.stripEmDashes(String(body.keywords || '').trim()),
+    preview_svg: ai.sanitizeHtml(String(body.preview_svg || '')),
+    content_html: ai.sanitizeHtml(ai.stripEmDashes(String(body.content_html || ''))),
+    status: body.status === 'published' ? 'published' : 'draft',
+    provider: String(body.provider || '')
+  };
+}
+
+/** Save a new article. */
+app.post('/api/studio/articles', requireAdmin, (req, res) => {
+  try {
+    const p = articlePayload(req.body);
+    if (!p.title || !p.content_html) {
+      return res.status(400).json({ success: false, error: 'Нужны заголовок и текст статьи' });
+    }
+    const slug = uniqueSlug(req.body.slug || p.title);
+    const result = db.prepare(`
+      INSERT INTO articles (slug, title, description, keywords, preview_svg, content_html, status, provider)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(slug, p.title, p.description, p.keywords, p.preview_svg, p.content_html, p.status, p.provider);
+    res.json({ success: true, id: result.lastInsertRowid, slug });
+  } catch (error) {
+    console.error('Error saving article:', error);
+    res.status(500).json({ success: false, error: 'Ошибка сохранения статьи' });
+  }
+});
+
+/** Update an article. */
+app.put('/api/studio/articles/:id', requireAdmin, (req, res) => {
+  try {
+    const existing = db.prepare('SELECT id FROM articles WHERE id = ?').get(req.params.id);
+    if (!existing) return res.status(404).json({ success: false, error: 'Статья не найдена' });
+    const p = articlePayload(req.body);
+    if (!p.title || !p.content_html) {
+      return res.status(400).json({ success: false, error: 'Нужны заголовок и текст статьи' });
+    }
+    const slug = uniqueSlug(req.body.slug || p.title, existing.id);
+    db.prepare(`
+      UPDATE articles SET slug = ?, title = ?, description = ?, keywords = ?, preview_svg = ?,
+        content_html = ?, status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?
+    `).run(slug, p.title, p.description, p.keywords, p.preview_svg, p.content_html, p.status, existing.id);
+    res.json({ success: true, slug });
+  } catch (error) {
+    console.error('Error updating article:', error);
+    res.status(500).json({ success: false, error: 'Ошибка обновления статьи' });
+  }
+});
+
+/** Delete an article. */
+app.delete('/api/studio/articles/:id', requireAdmin, (req, res) => {
+  db.prepare('DELETE FROM articles WHERE id = ?').run(req.params.id);
+  res.json({ success: true });
+});
+
+// ============================================
 // Page Routes
 // ============================================
 
@@ -691,7 +881,9 @@ app.listen(PORT, () => {
 ║     🏠 МастерДом — ремонт квартир и домов                  ║
 ╠════════════════════════════════════════════════════════════╣
 ║  Сайт:        http://localhost:${PORT}                        ║
+║  Блог:        http://localhost:${PORT}/blog                   ║
 ║  Калькулятор: http://localhost:${PORT}/calculator             ║
+║  Студия статей: http://localhost:${PORT}${STUDIO_PATH}
 ║  Админ-панель: http://localhost:${PORT}/admin                 ║
 ╚════════════════════════════════════════════════════════════╝
   `);

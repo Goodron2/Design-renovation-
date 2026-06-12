@@ -1,0 +1,427 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="robots" content="noindex, nofollow">
+  <title>Студия статей · МастерДом</title>
+  <style>
+    :root {
+      --accent: #f59e0b; --accent-dark: #d97706; --dark: #16191f; --dark-2: #1f242d;
+      --dark-3: #2a313c; --line: #3a4250; --text: #e8e6e1; --muted: #9aa1ab;
+      --green: #22c55e; --red: #ef4444; --radius: 12px;
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: var(--dark); color: var(--text); font-size: 15px; line-height: 1.55;
+      min-height: 100vh;
+    }
+    .hidden { display: none !important; }
+    button {
+      font-family: inherit; font-size: 14px; font-weight: 700; cursor: pointer;
+      border: none; border-radius: 10px; padding: 11px 20px; transition: opacity .15s;
+    }
+    button:hover { opacity: .88; }
+    button:disabled { opacity: .45; cursor: not-allowed; }
+    .btn-accent { background: var(--accent); color: #1a1304; }
+    .btn-ghost { background: var(--dark-3); color: var(--text); border: 1px solid var(--line); }
+    .btn-green { background: var(--green); color: #06330f; }
+    .btn-red { background: transparent; color: var(--red); border: 1px solid var(--red); }
+    input, textarea, select {
+      width: 100%; background: var(--dark-2); color: var(--text);
+      border: 1px solid var(--line); border-radius: 10px; padding: 11px 14px;
+      font-family: inherit; font-size: 14.5px;
+    }
+    textarea { resize: vertical; }
+    input:focus, textarea:focus, select:focus { outline: none; border-color: var(--accent); }
+    label { display: block; font-size: 12.5px; font-weight: 700; color: var(--muted); margin: 16px 0 6px; text-transform: uppercase; letter-spacing: .05em; }
+
+    /* ===== Login ===== */
+    .login-box {
+      max-width: 380px; margin: 14vh auto; background: var(--dark-2);
+      border: 1px solid var(--line); border-radius: 16px; padding: 36px;
+    }
+    .login-box h1 { font-size: 21px; margin-bottom: 6px; }
+    .login-box p { color: var(--muted); font-size: 14px; margin-bottom: 20px; }
+    .login-box button { width: 100%; margin-top: 16px; }
+    .err { color: var(--red); font-size: 13.5px; margin-top: 10px; min-height: 18px; }
+
+    /* ===== App ===== */
+    .topbar {
+      display: flex; align-items: center; justify-content: space-between; gap: 16px;
+      padding: 14px 26px; background: var(--dark-2); border-bottom: 1px solid var(--line);
+      position: sticky; top: 0; z-index: 50;
+    }
+    .topbar b { color: var(--accent); }
+    .tabs { display: flex; gap: 8px; }
+    .tab {
+      background: transparent; color: var(--muted); border: 1px solid transparent; padding: 9px 18px;
+    }
+    .tab.active { background: var(--dark-3); color: var(--text); border-color: var(--line); }
+    .wrap { max-width: 1100px; margin: 0 auto; padding: 28px 26px 80px; }
+    .card {
+      background: var(--dark-2); border: 1px solid var(--line); border-radius: var(--radius);
+      padding: 24px; margin-bottom: 22px;
+    }
+    .card h2 { font-size: 17px; margin-bottom: 4px; }
+    .card .sub { color: var(--muted); font-size: 13.5px; }
+    .row { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
+    .grow { flex: 1; min-width: 220px; }
+    .status { font-size: 13.5px; color: var(--muted); min-height: 20px; margin-top: 10px; }
+    .status.error { color: var(--red); }
+    .status.ok { color: var(--green); }
+    .spinner {
+      display: inline-block; width: 14px; height: 14px; border: 2px solid var(--line);
+      border-top-color: var(--accent); border-radius: 50%; animation: spin 0.8s linear infinite;
+      vertical-align: -2px; margin-right: 8px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .topics { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+    .topic-chip {
+      background: var(--dark-3); border: 1px solid var(--line); color: var(--text);
+      border-radius: 999px; padding: 7px 14px; font-size: 13px; font-weight: 600;
+    }
+    .topic-chip:hover { border-color: var(--accent); }
+
+    /* editor */
+    .preview-pane {
+      background: #f7f6f3; color: #232730; border-radius: 10px; padding: 26px;
+      max-height: 480px; overflow: auto; border: 1px solid var(--line);
+    }
+    .preview-pane h2 { font-size: 21px; margin: 22px 0 10px; color: #16191f; }
+    .preview-pane h3 { font-size: 17px; margin: 16px 0 8px; color: #16191f; }
+    .preview-pane p { margin-bottom: 12px; }
+    .preview-pane ul, .preview-pane ol { margin: 0 0 12px 22px; }
+    .preview-pane table { border-collapse: collapse; width: 100%; margin: 14px 0; font-size: 14px; }
+    .preview-pane th, .preview-pane td { border: 1px solid #d7d2c8; padding: 8px 10px; text-align: left; }
+    .preview-pane figure { margin: 16px 0; border: 1px solid #d7d2c8; border-radius: 8px; overflow: hidden; }
+    .preview-pane figure svg { width: 100%; height: auto; display: block; }
+    .preview-pane figcaption { font-size: 12.5px; color: #6b7280; padding: 8px 12px; border-top: 1px solid #d7d2c8; }
+    .svg-preview { background: var(--dark-3); border-radius: 10px; padding: 10px; margin-top: 8px; }
+    .svg-preview svg { width: 100%; max-height: 260px; height: auto; display: block; }
+
+    /* articles list */
+    table.list { width: 100%; border-collapse: collapse; }
+    table.list th, table.list td { text-align: left; padding: 11px 12px; border-bottom: 1px solid var(--line); font-size: 14px; }
+    table.list th { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .05em; }
+    .badge { font-size: 12px; font-weight: 700; padding: 4px 10px; border-radius: 999px; }
+    .badge.published { background: rgba(34,197,94,.15); color: var(--green); }
+    .badge.draft { background: rgba(245,158,11,.15); color: var(--accent); }
+    .actions button { padding: 6px 12px; font-size: 12.5px; margin-right: 6px; }
+    a { color: var(--accent); }
+  </style>
+</head>
+<body>
+
+  <!-- ===== Login ===== -->
+  <div id="loginView" class="login-box">
+    <h1>🛠 Студия статей</h1>
+    <p>Закрытый инструмент МастерДом. Введите пароль администратора.</p>
+    <input type="password" id="password" placeholder="Пароль" autocomplete="current-password">
+    <button class="btn-accent" id="loginBtn">Войти</button>
+    <div class="err" id="loginErr"></div>
+  </div>
+
+  <!-- ===== App ===== -->
+  <div id="appView" class="hidden">
+    <div class="topbar">
+      <div>🛠 <b>Студия статей</b> · МастерДом</div>
+      <div class="tabs">
+        <button class="tab active" data-view="genView">Генератор</button>
+        <button class="tab" data-view="listView">Статьи</button>
+      </div>
+      <button class="btn-ghost" id="logoutBtn">Выйти</button>
+    </div>
+
+    <div class="wrap">
+      <!-- ===== Generator ===== -->
+      <div id="genView">
+        <div class="card">
+          <h2>Новая статья</h2>
+          <p class="sub">Введите тему или выберите из подсказок. Генерация занимает 1-4 минуты: модель пишет текст и рисует иллюстрации.</p>
+          <label>Тема статьи</label>
+          <input id="topic" placeholder="Например: Как выбрать ламинат для квартиры: классы, подложка, цены">
+          <label>Пожелания (необязательно)</label>
+          <input id="extra" placeholder="Например: сделай упор на бюджетные варианты, добавь таблицу сравнения">
+          <label>Нейросеть</label>
+          <div class="row">
+            <select id="provider" class="grow" style="max-width:280px">
+              <option value="auto">Авто (что настроено)</option>
+              <option value="anthropic">Anthropic (Claude)</option>
+              <option value="zai">Z.ai (GLM)</option>
+            </select>
+            <button class="btn-accent" id="generateBtn">✨ Сгенерировать статью</button>
+            <button class="btn-ghost" id="suggestBtn">💡 Предложить темы</button>
+          </div>
+          <div class="status" id="genStatus"></div>
+          <div class="topics" id="topics"></div>
+        </div>
+
+        <!-- ===== Editor ===== -->
+        <div class="card hidden" id="editorCard">
+          <h2 id="editorTitle">Редактор статьи</h2>
+          <p class="sub">Проверьте и поправьте текст. Черновик не виден на сайте, публикация делает статью доступной в /blog и попадает в sitemap.</p>
+          <label>Заголовок</label>
+          <input id="fTitle">
+          <label>URL (slug)</label>
+          <input id="fSlug">
+          <label>Мета-описание (для поисковиков)</label>
+          <textarea id="fDescription" rows="2"></textarea>
+          <label>Ключевые слова</label>
+          <input id="fKeywords">
+          <label>Обложка (SVG-код)</label>
+          <textarea id="fPreviewSvg" rows="4" spellcheck="false"></textarea>
+          <div class="svg-preview" id="svgPreview"></div>
+          <label>Текст статьи (HTML)</label>
+          <textarea id="fContent" rows="18" spellcheck="false"></textarea>
+          <label>Предпросмотр</label>
+          <div class="preview-pane" id="contentPreview"></div>
+          <div class="row" style="margin-top:18px">
+            <button class="btn-ghost" id="saveDraftBtn">💾 Сохранить черновик</button>
+            <button class="btn-green" id="publishBtn">🚀 Опубликовать</button>
+            <span class="status" id="saveStatus" style="margin:0"></span>
+          </div>
+        </div>
+      </div>
+
+      <!-- ===== Articles list ===== -->
+      <div id="listView" class="hidden">
+        <div class="card">
+          <h2>Все статьи</h2>
+          <p class="sub">Опубликованные видны на <a href="/blog" target="_blank">/blog</a> и в sitemap. Черновики видны только здесь.</p>
+          <div style="overflow-x:auto; margin-top:14px">
+            <table class="list">
+              <thead><tr><th>Заголовок</th><th>Статус</th><th>Дата</th><th></th></tr></thead>
+              <tbody id="articlesBody"></tbody>
+            </table>
+          </div>
+          <div class="status" id="listStatus"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+<script>
+(function () {
+  'use strict';
+  var token = sessionStorage.getItem('studioToken') || null;
+  var editingId = null;
+  var timerInt = null;
+
+  function $(id) { return document.getElementById(id); }
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+
+  function api(method, url, body) {
+    return fetch(url, {
+      method: method,
+      headers: Object.assign(
+        { 'X-Admin-Token': token || '' },
+        body ? { 'Content-Type': 'application/json' } : {}
+      ),
+      body: body ? JSON.stringify(body) : undefined
+    }).then(function (res) {
+      if (res.status === 401) { logout(); throw new Error('Сессия истекла, войдите заново'); }
+      return res.json().then(function (data) {
+        if (!data.success) throw new Error(data.error || ('Ошибка ' + res.status));
+        return data;
+      });
+    });
+  }
+
+  // ===== auth =====
+  function showApp() {
+    $('loginView').classList.add('hidden');
+    $('appView').classList.remove('hidden');
+    loadArticles();
+  }
+  function logout() {
+    if (token) fetch('/api/admin/logout', { method: 'POST', headers: { 'X-Admin-Token': token } });
+    token = null;
+    sessionStorage.removeItem('studioToken');
+    $('appView').classList.add('hidden');
+    $('loginView').classList.remove('hidden');
+  }
+  $('loginBtn').onclick = function () {
+    $('loginErr').textContent = '';
+    fetch('/api/admin/login', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password: $('password').value })
+    }).then(function (r) { return r.json(); }).then(function (d) {
+      if (!d.success) { $('loginErr').textContent = d.error || 'Неверный пароль'; return; }
+      token = d.token;
+      sessionStorage.setItem('studioToken', token);
+      $('password').value = '';
+      showApp();
+    }).catch(function () { $('loginErr').textContent = 'Сервер недоступен'; });
+  };
+  $('password').addEventListener('keydown', function (e) { if (e.key === 'Enter') $('loginBtn').click(); });
+  $('logoutBtn').onclick = logout;
+
+  // ===== tabs =====
+  document.querySelectorAll('.tab').forEach(function (t) {
+    t.onclick = function () {
+      document.querySelectorAll('.tab').forEach(function (x) { x.classList.remove('active'); });
+      t.classList.add('active');
+      $('genView').classList.add('hidden');
+      $('listView').classList.add('hidden');
+      $(t.dataset.view).classList.remove('hidden');
+      if (t.dataset.view === 'listView') loadArticles();
+    };
+  });
+
+  // ===== generation =====
+  function setGenStatus(html, cls) {
+    var el = $('genStatus');
+    el.className = 'status' + (cls ? ' ' + cls : '');
+    el.innerHTML = html;
+  }
+  function startTimer(prefix) {
+    var t0 = Date.now();
+    clearInterval(timerInt);
+    timerInt = setInterval(function () {
+      var s = Math.floor((Date.now() - t0) / 1000);
+      setGenStatus('<span class="spinner"></span>' + prefix + ' ' + Math.floor(s / 60) + ':' + ('0' + s % 60).slice(-2));
+    }, 1000);
+  }
+  function stopTimer() { clearInterval(timerInt); timerInt = null; }
+
+  $('suggestBtn').onclick = function () {
+    $('suggestBtn').disabled = true;
+    startTimer('Подбираю темы...');
+    api('POST', '/api/studio/suggest', { provider: $('provider').value })
+      .then(function (d) {
+        stopTimer(); setGenStatus('Нажмите на тему, чтобы подставить её в поле', 'ok');
+        $('topics').innerHTML = d.topics.map(function (t) {
+          return '<button class="topic-chip">' + esc(t) + '</button>';
+        }).join('');
+        document.querySelectorAll('.topic-chip').forEach(function (c) {
+          c.onclick = function () { $('topic').value = c.textContent; };
+        });
+      })
+      .catch(function (e) { stopTimer(); setGenStatus(esc(e.message), 'error'); })
+      .finally(function () { $('suggestBtn').disabled = false; });
+  };
+
+  $('generateBtn').onclick = function () {
+    var topic = $('topic').value.trim();
+    if (!topic) { setGenStatus('Введите тему статьи', 'error'); return; }
+    $('generateBtn').disabled = true;
+    startTimer('Пишу статью и рисую иллюстрации...');
+    api('POST', '/api/studio/generate', {
+      topic: topic, extra: $('extra').value.trim(), provider: $('provider').value
+    }).then(function (d) {
+      stopTimer(); setGenStatus('Готово! Проверьте текст ниже и сохраните.', 'ok');
+      editingId = null;
+      fillEditor(d.article);
+    }).catch(function (e) { stopTimer(); setGenStatus(esc(e.message), 'error'); })
+      .finally(function () { $('generateBtn').disabled = false; });
+  };
+
+  // ===== editor =====
+  function fillEditor(a) {
+    $('editorCard').classList.remove('hidden');
+    $('editorTitle').textContent = editingId ? 'Редактор статьи #' + editingId : 'Редактор новой статьи';
+    $('fTitle').value = a.title || '';
+    $('fSlug').value = a.slug || '';
+    $('fDescription').value = a.description || '';
+    $('fKeywords').value = a.keywords || '';
+    $('fPreviewSvg').value = a.preview_svg || '';
+    $('fContent').value = a.content_html || '';
+    refreshPreviews();
+    $('editorCard').scrollIntoView({ behavior: 'smooth' });
+  }
+  function refreshPreviews() {
+    $('svgPreview').innerHTML = $('fPreviewSvg').value || '<span style="color:var(--muted);font-size:13px">нет обложки</span>';
+    $('contentPreview').innerHTML = $('fContent').value || '<span style="color:#6b7280">пусто</span>';
+  }
+  $('fPreviewSvg').addEventListener('input', refreshPreviews);
+  $('fContent').addEventListener('input', refreshPreviews);
+
+  function collect(status) {
+    return {
+      title: $('fTitle').value, slug: $('fSlug').value, description: $('fDescription').value,
+      keywords: $('fKeywords').value, preview_svg: $('fPreviewSvg').value,
+      content_html: $('fContent').value, status: status
+    };
+  }
+  function save(status) {
+    var el = $('saveStatus');
+    el.className = 'status'; el.textContent = 'Сохраняю...';
+    var p = editingId
+      ? api('PUT', '/api/studio/articles/' + editingId, collect(status))
+      : api('POST', '/api/studio/articles', collect(status));
+    p.then(function (d) {
+      if (d.id) editingId = d.id;
+      if (d.slug) $('fSlug').value = d.slug;
+      el.className = 'status ok';
+      el.innerHTML = status === 'published'
+        ? 'Опубликовано! <a href="/blog/' + esc(d.slug || $('fSlug').value) + '" target="_blank">Открыть статью</a>'
+        : 'Черновик сохранён';
+      loadArticles();
+    }).catch(function (e) { el.className = 'status error'; el.textContent = e.message; });
+  }
+  $('saveDraftBtn').onclick = function () { save('draft'); };
+  $('publishBtn').onclick = function () { save('published'); };
+
+  // ===== list =====
+  function loadArticles() {
+    api('GET', '/api/studio/articles').then(function (d) {
+      $('articlesBody').innerHTML = d.articles.map(function (a) {
+        return '<tr>' +
+          '<td>' + esc(a.title) + '<br><small style="color:var(--muted)">/blog/' + esc(a.slug) + '</small></td>' +
+          '<td><span class="badge ' + a.status + '">' + (a.status === 'published' ? 'опубликована' : 'черновик') + '</span></td>' +
+          '<td style="white-space:nowrap">' + esc(String(a.created_at).slice(0, 10)) + '</td>' +
+          '<td class="actions" style="white-space:nowrap">' +
+            '<button class="btn-ghost" data-edit="' + a.id + '">✏️ Изменить</button>' +
+            (a.status === 'published'
+              ? '<button class="btn-ghost" data-unpub="' + a.id + '">Снять</button>'
+              : '<button class="btn-green" data-pub="' + a.id + '">Опубликовать</button>') +
+            '<button class="btn-red" data-del="' + a.id + '">Удалить</button>' +
+          '</td></tr>';
+      }).join('') || '<tr><td colspan="4" style="color:var(--muted)">Статей пока нет</td></tr>';
+
+      $('articlesBody').querySelectorAll('[data-edit]').forEach(function (b) {
+        b.onclick = function () {
+          api('GET', '/api/studio/articles/' + b.dataset.edit).then(function (d) {
+            editingId = d.article.id;
+            document.querySelector('[data-view="genView"]').click();
+            fillEditor(d.article);
+          });
+        };
+      });
+      function toggle(id, status) {
+        api('GET', '/api/studio/articles/' + id).then(function (d) {
+          var a = d.article; a.status = status;
+          return api('PUT', '/api/studio/articles/' + id, a);
+        }).then(loadArticles).catch(function (e) { $('listStatus').textContent = e.message; });
+      }
+      $('articlesBody').querySelectorAll('[data-pub]').forEach(function (b) {
+        b.onclick = function () { toggle(b.dataset.pub, 'published'); };
+      });
+      $('articlesBody').querySelectorAll('[data-unpub]').forEach(function (b) {
+        b.onclick = function () { toggle(b.dataset.unpub, 'draft'); };
+      });
+      $('articlesBody').querySelectorAll('[data-del]').forEach(function (b) {
+        b.onclick = function () {
+          if (!confirm('Удалить статью безвозвратно?')) return;
+          api('DELETE', '/api/studio/articles/' + b.dataset.del).then(loadArticles);
+        };
+      });
+    }).catch(function (e) { $('listStatus').textContent = e.message; });
+  }
+
+  // ===== boot: validate stored session =====
+  if (token) {
+    fetch('/api/admin/verify', { headers: { 'X-Admin-Token': token } })
+      .then(function (r) { if (r.ok) showApp(); else logout(); })
+      .catch(function () {});
+  }
+})();
+</script>
+</body>
+</html>

@@ -67,6 +67,23 @@ function initializeDatabase() {
     )
   `);
 
+  // Blog articles table - AI-generated SEO articles
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS articles (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      slug TEXT UNIQUE NOT NULL,
+      title TEXT NOT NULL,
+      description TEXT DEFAULT '',
+      keywords TEXT DEFAULT '',
+      preview_svg TEXT DEFAULT '',
+      content_html TEXT NOT NULL,
+      status TEXT DEFAULT 'draft',
+      provider TEXT DEFAULT '',
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+
   // Insert default admin password if not exists (password: admin123)
   const adminExists = db.prepare('SELECT * FROM admin_settings WHERE setting_key = ?').get('admin_password');
   if (!adminExists) {
