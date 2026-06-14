@@ -479,7 +479,7 @@ function buildChatContextText(context) {
 async function chatReply({ message, context, history = [] }) {
   const provider = pickProvider();
   let model;
-  if (provider === 'openrouter') model = process.env.CHAT_OPENROUTER_MODEL || 'anthropic/claude-3.5-haiku';
+  if (provider === 'openrouter') model = process.env.CHAT_OPENROUTER_MODEL || 'google/gemini-2.5-flash-lite';
   else if (provider === 'zai') model = process.env.CHAT_ZAI_MODEL || process.env.ZAI_MODEL || 'glm-4.6';
   else model = process.env.CHAT_ANTHROPIC_MODEL || 'claude-haiku-4-5';
   const maxTokens = parseInt(process.env.CHAT_MAX_TOKENS || '400', 10);
