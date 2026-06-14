@@ -334,7 +334,7 @@ const LIMIT_MSG_GLOBAL = 'Помощник сейчас перегружен з�
 /** True when at least one AI provider key is configured on the server. */
 function aiAvailable() {
   const p = ai.getProviders();
-  return !!(p.anthropic || p.zai);
+  return !!(p.openrouter || p.anthropic || p.zai);
 }
 
 /** Sanitize the short conversation history sent by the client. */

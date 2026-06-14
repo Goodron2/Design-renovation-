@@ -8,6 +8,7 @@
 
 const ANTHROPIC_URL = 'https://api.anthropic.com/v1/messages';
 const ZAI_URL = 'https://api.z.ai/api/paas/v4/chat/completions';
+const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
 
 const GENERATION_TIMEOUT_MS = 8 * 60 * 1000;
 
@@ -67,6 +68,7 @@ const TOPICS_PROMPT = `Ты SEO-редактор блога строительн
 
 function getProviders() {
   return {
+    openrouter: !!process.env.OPENROUTER_API_KEY,
     anthropic: !!process.env.ANTHROPIC_API_KEY && process.env.ANTHROPIC_API_KEY !== 'your-anthropic-api-key-here',
     zai: !!process.env.ZAI_API_KEY
   };
@@ -82,9 +84,10 @@ function pickProvider(requested) {
   }
   const preferred = process.env.AI_PROVIDER;
   if (preferred && available[preferred]) return preferred;
+  if (available.openrouter) return 'openrouter';
   if (available.anthropic) return 'anthropic';
   if (available.zai) return 'zai';
-  throw new Error('Не настроен ни один ключ API (ANTHROPIC_API_KEY или ZAI_API_KEY в .env)');
+  throw new Error('Не настроен ни один ключ API (OPENROUTER_API_KEY, ANTHROPIC_API_KEY или ZAI_API_KEY в .env)');
 }
 
 /** Accept either a plain string or a ready messages array. */
@@ -152,10 +155,41 @@ async function callZai(system, input, maxTokens, model) {
   }
 }
 
+async function callOpenRouter(system, input, maxTokens, model) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), GENERATION_TIMEOUT_MS);
+  try {
+    const res = await fetch(OPENROUTER_URL, {
+      method: 'POST',
+      signal: controller.signal,
+      headers: {
+        'content-type': 'application/json',
+        'authorization': `Bearer ${process.env.OPENROUTER_API_KEY}`,
+        'HTTP-Referer': process.env.BASE_URL || 'http://localhost',
+        'X-Title': 'MasterDom'
+      },
+      body: JSON.stringify({
+        model: model || process.env.OPENROUTER_MODEL || 'anthropic/claude-3.5-sonnet',
+        max_tokens: maxTokens,
+        messages: [{ role: 'system', content: system }, ...toMessages(input)]
+      })
+    });
+    if (!res.ok) {
+      const body = await res.text();
+      throw new Error(`OpenRouter API ${res.status}: ${body.slice(0, 300)}`);
+    }
+    const data = await res.json();
+    const msg = data.choices && data.choices[0] && data.choices[0].message;
+    return (msg && msg.content) || '';
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 function callProvider(provider, system, input, maxTokens, model) {
-  return provider === 'zai'
-    ? callZai(system, input, maxTokens, model)
-    : callAnthropic(system, input, maxTokens, model);
+  if (provider === 'zai') return callZai(system, input, maxTokens, model);
+  if (provider === 'openrouter') return callOpenRouter(system, input, maxTokens, model);
+  return callAnthropic(system, input, maxTokens, model);
 }
 
 /** Extract a JSON value from model output that may carry fences or prose. */
@@ -284,9 +318,10 @@ function buildChatContextText(context) {
  */
 async function chatReply({ message, context, history = [] }) {
   const provider = pickProvider();
-  const model = provider === 'zai'
-    ? (process.env.CHAT_ZAI_MODEL || process.env.ZAI_MODEL || 'glm-4.6')
-    : (process.env.CHAT_ANTHROPIC_MODEL || 'claude-haiku-4-5');
+  let model;
+  if (provider === 'openrouter') model = process.env.CHAT_OPENROUTER_MODEL || 'anthropic/claude-3.5-haiku';
+  else if (provider === 'zai') model = process.env.CHAT_ZAI_MODEL || process.env.ZAI_MODEL || 'glm-4.6';
+  else model = process.env.CHAT_ANTHROPIC_MODEL || 'claude-haiku-4-5';
   const maxTokens = parseInt(process.env.CHAT_MAX_TOKENS || '400', 10);
 
   let convo = '';
