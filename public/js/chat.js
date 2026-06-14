@@ -1,6 +1,7 @@
 /**
  * AI Chat Component
- * Mock AI chat with Claude API integration placeholder
+ * Talks to /api/chat, which runs a real renovation/design assistant
+ * (a cheap model behind hard per-IP and global daily caps).
  */
 
 class RenovationChat {
@@ -10,6 +11,8 @@ class RenovationChat {
     this.sendButton = document.getElementById(options.sendButtonId || 'sendChatBtn');
     this.projectId = null;
     this.getProjectContext = options.getProjectContext || (() => ({}));
+    this.history = [];      // recent turns: { role, content }
+    this.sending = false;   // guard against double-send
 
     this.init();
   }
@@ -43,49 +46,63 @@ class RenovationChat {
    */
   async sendMessage() {
     const message = this.inputElement.value.trim();
-    if (!message) return;
+    if (!message || this.sending) return;
 
-    // Clear input
+    // Clear input and add the user message to the UI
     this.inputElement.value = '';
-
-    // Add user message to UI
     this.addMessage(message, 'user');
 
-    // Show typing indicator
+    // Capture prior turns (without the new message, which the server adds itself)
+    const historyToSend = this.history.slice(-6);
+    this.history.push({ role: 'user', content: message });
+
+    this.setSending(true);
     const typingIndicator = this.showTypingIndicator();
 
     try {
-      // Get project context for AI
-      const projectContext = this.getProjectContext();
-
-      // Send to server
       const response = await fetch('/api/chat', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           projectId: this.projectId,
           message: message,
-          projectContext: projectContext
+          projectContext: this.getProjectContext(),
+          history: historyToSend
         })
       });
 
       const data = await response.json();
-
-      // Remove typing indicator
       this.removeTypingIndicator(typingIndicator);
 
       if (data.success) {
         this.addMessage(data.response, 'assistant');
+        this.history.push({ role: 'assistant', content: data.response });
+        if (this.history.length > 12) this.history = this.history.slice(-12);
+      } else if (response.status === 429) {
+        this.addMessage('Слишком много запросов. Подождите немного и попробуйте снова.', 'assistant');
       } else {
-        this.addMessage('Извините, произошла ошибка. Попробуйте ещё раз.', 'assistant');
+        this.addMessage(data.error || 'Извините, произошла ошибка. Попробуйте ещё раз.', 'assistant');
       }
     } catch (error) {
       console.error('Chat error:', error);
       this.removeTypingIndicator(typingIndicator);
       this.addMessage('Ошибка соединения. Проверьте подключение к интернету.', 'assistant');
+    } finally {
+      this.setSending(false);
     }
+  }
+
+  /**
+   * Toggle the sending state (disables input + button to avoid double-send).
+   */
+  setSending(sending) {
+    this.sending = sending;
+    if (this.sendButton) {
+      this.sendButton.disabled = sending;
+      this.sendButton.textContent = sending ? '...' : 'Отправить';
+    }
+    if (this.inputElement) this.inputElement.disabled = sending;
+    if (!sending && this.inputElement) this.inputElement.focus();
   }
 
   /**
@@ -94,7 +111,7 @@ class RenovationChat {
   addMessage(text, role) {
     const messageEl = document.createElement('div');
     messageEl.className = `chat-message ${role}`;
-    messageEl.innerHTML = `<p>${this.escapeHtml(text)}</p>`;
+    messageEl.innerHTML = `<p>${this.escapeHtml(text).replace(/\n/g, '<br>')}</p>`;
 
     this.messagesContainer.appendChild(messageEl);
     this.scrollToBottom();
@@ -177,58 +194,27 @@ class RenovationChat {
       this.messagesContainer.removeChild(this.messagesContainer.lastChild);
     }
 
-    // Add historical messages
+    // Add historical messages and seed the in-memory history for context
+    this.history = [];
     messages.forEach(msg => {
       this.addMessage(msg.message, msg.role);
+      this.history.push({ role: msg.role === 'assistant' ? 'assistant' : 'user', content: msg.message });
     });
+    this.history = this.history.slice(-12);
   }
 
   /**
    * Clear chat history
    */
   clearHistory() {
+    this.history = [];
     this.messagesContainer.innerHTML = `
       <div class="chat-message assistant">
-        <p>Здравствуйте! Я ваш помощник по планированию ремонта. Задавайте вопросы о материалах, стоимости или попросите рекомендации.</p>
+        <p>Здравствуйте! Я помощник по ремонту и дизайну от МастерДом. Опишите комнату или спросите про материалы, цвета, стиль и стоимость, и я помогу подобрать отделку и собрать смету.</p>
       </div>
     `;
   }
 }
-
-/**
- * Claude API Integration Placeholder
- * Replace the mock responses in server.js with this when API key is available
- *
- * To integrate Claude API:
- * 1. Sign up at console.anthropic.com
- * 2. Get your API key
- * 3. Add to server environment: ANTHROPIC_API_KEY=your_key
- * 4. Install SDK: npm install @anthropic-ai/sdk
- * 5. Replace generateMockResponse() in server.js with:
- *
- * const Anthropic = require('@anthropic-ai/sdk');
- * const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
- *
- * async function generateClaudeResponse(message, context) {
- *   const systemPrompt = `Вы - помощник по планированию ремонта квартир.
- *     Помогайте пользователям с выбором материалов, расчётом стоимости и рекомендациями.
- *     Отвечайте на русском языке. Будьте кратким и полезным.
- *
- *     Контекст проекта:
- *     - Количество комнат: ${context.rooms?.length || 0}
- *     - Общая площадь: ${context.totalArea || 0} м²
- *     - Текущая стоимость: ${context.totalCost || 0} ₽`;
- *
- *   const response = await anthropic.messages.create({
- *     model: 'claude-sonnet-4-20250514',
- *     max_tokens: 500,
- *     system: systemPrompt,
- *     messages: [{ role: 'user', content: message }]
- *   });
- *
- *   return response.content[0].text;
- * }
- */
 
 // Export for use in other scripts
 window.RenovationChat = RenovationChat;

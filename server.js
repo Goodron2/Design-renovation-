@@ -308,97 +308,100 @@ app.post('/api/admin/pricing', requireAdmin, (req, res) => {
 // API Routes - Chat
 // ============================================
 
-// Claude API client (initialized if API key exists)
-let anthropicClient = null;
-const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
+// ----- AI chat configuration & hard spend limits -----
+// The assistant uses a cheap model and a small token cap (see ai.js). On top of
+// that we cap how many AI replies can be produced, so the chat cannot be abused
+// as a free general-purpose chatbot and run up the API bill.
+const CHAT_MAX_INPUT    = parseInt(process.env.CHAT_MAX_INPUT    || '600', 10); // chars per message
+const CHAT_DAILY_PER_IP = parseInt(process.env.CHAT_DAILY_PER_IP || '25', 10);  // AI replies / IP / day
+const CHAT_DAILY_GLOBAL = parseInt(process.env.CHAT_DAILY_GLOBAL || '400', 10); // AI replies / day (everyone)
 
-if (ANTHROPIC_API_KEY && ANTHROPIC_API_KEY !== 'your-anthropic-api-key-here') {
-  try {
-    const Anthropic = require('@anthropic-ai/sdk');
-    anthropicClient = new Anthropic({ apiKey: ANTHROPIC_API_KEY });
-    console.log('✓ Claude API initialized');
-  } catch (e) {
-    console.log('⚠ Claude API SDK not installed. Run: npm install @anthropic-ai/sdk');
-  }
+const chatUsage = { day: '', global: 0, perIp: new Map() };
+function chatBudget(ip) {
+  const today = new Date().toISOString().slice(0, 10);
+  if (chatUsage.day !== today) { chatUsage.day = today; chatUsage.global = 0; chatUsage.perIp.clear(); }
+  const used = chatUsage.perIp.get(ip) || 0;
+  return {
+    globalLeft: CHAT_DAILY_GLOBAL - chatUsage.global,
+    ipLeft: CHAT_DAILY_PER_IP - used,
+    consume() { chatUsage.global += 1; chatUsage.perIp.set(ip, used + 1); }
+  };
+}
+
+const LIMIT_MSG_IP = 'Вы задали уже много вопросов помощнику за сегодня. Чтобы подробно обсудить проект, позвоните нам: 8 916 143-78-79 (бесплатный замер и консультация).';
+const LIMIT_MSG_GLOBAL = 'Помощник сейчас перегружен запросами. Пожалуйста, попробуйте чуть позже или позвоните нам: 8 916 143-78-79.';
+
+/** True when at least one AI provider key is configured on the server. */
+function aiAvailable() {
+  const p = ai.getProviders();
+  return !!(p.anthropic || p.zai);
+}
+
+/** Sanitize the short conversation history sent by the client. */
+function sanitizeHistory(raw) {
+  if (!Array.isArray(raw)) return [];
+  return raw.slice(-6)
+    .filter(m => m && typeof m.content === 'string' && m.content.trim())
+    .map(m => ({ role: m.role === 'assistant' ? 'assistant' : 'user', content: m.content.slice(0, 800) }));
 }
 
 /**
- * Generate AI response using Claude API or mock
+ * AI chat for the calculator. A real renovation assistant for everyone (cheap
+ * model), protected by per-IP and global daily caps; falls back to a basic
+ * keyword helper when no API key is configured on the server.
  */
-async function generateAIResponse(message, context, useRealAI = false) {
-  // Use Claude API if available and enabled
-  if (anthropicClient && useRealAI) {
-    try {
-      const systemPrompt = `Вы - опытный консультант по ремонту квартир.
-Помогайте пользователям с выбором материалов, расчётом стоимости и рекомендациями.
-Отвечайте на русском языке. Будьте кратким и полезным.
-${context ? `
-Контекст проекта:
-- Количество комнат: ${context.rooms?.length || 0}
-- Общая площадь: ${context.totalArea || 0} м²
-- Текущая стоимость: ${context.totalCost || 0} ₽` : ''}`;
-
-      const response = await anthropicClient.messages.create({
-        model: 'claude-sonnet-4-20250514',
-        max_tokens: 500,
-        system: systemPrompt,
-        messages: [{ role: 'user', content: message }]
-      });
-
-      return response.content[0].text;
-    } catch (error) {
-      console.error('Claude API error:', error);
-      // Fall back to mock response
-      return generateMockResponse(message, context);
-    }
-  }
-
-  // Use mock response
-  return generateMockResponse(message, context);
-}
-
-/**
- * Send message to AI chat
- * Rate limited for regular users, admin can use real AI if configured
- */
-app.post('/api/chat', checkAdmin, rateLimit(30, 15 * 60 * 1000), async (req, res) => {
+app.post('/api/chat', rateLimit(30, 15 * 60 * 1000), async (req, res) => {
   try {
     const { projectId, message, projectContext } = req.body;
 
     if (!message || message.trim().length === 0) {
       return res.status(400).json({ success: false, error: 'Сообщение не может быть пустым' });
     }
-
-    if (message.length > 1000) {
-      return res.status(400).json({ success: false, error: 'Сообщение слишком длинное' });
+    if (message.length > CHAT_MAX_INPUT) {
+      return res.status(400).json({ success: false, error: `Сообщение слишком длинное (максимум ${CHAT_MAX_INPUT} символов)` });
     }
 
-    // Save user message to history if project exists
-    if (projectId) {
+    const saveTurn = (role, text) => {
+      if (!projectId) return;
       const project = db.prepare('SELECT id FROM projects WHERE share_id = ?').get(projectId);
-      if (project) {
-        db.prepare('INSERT INTO chat_history (project_id, role, message) VALUES (?, ?, ?)').run(project.id, 'user', message);
+      if (project) db.prepare('INSERT INTO chat_history (project_id, role, message) VALUES (?, ?, ?)').run(project.id, role, text);
+    };
+
+    saveTurn('user', message);
+
+    let aiResponse;
+    let limited = false;
+
+    if (aiAvailable()) {
+      const ip = req.ip || req.connection.remoteAddress || 'unknown';
+      const budget = chatBudget(ip);
+      if (budget.globalLeft <= 0) {
+        aiResponse = LIMIT_MSG_GLOBAL; limited = true;
+      } else if (budget.ipLeft <= 0) {
+        aiResponse = LIMIT_MSG_IP; limited = true;
+      } else {
+        budget.consume();
+        try {
+          aiResponse = await ai.chatReply({
+            message,
+            context: projectContext,
+            history: sanitizeHistory(req.body.history)
+          });
+        } catch (e) {
+          console.error('AI chat error:', e.message);
+          aiResponse = generateMockResponse(message, projectContext);
+        }
       }
+    } else {
+      // No API key configured: degrade to the basic keyword helper.
+      aiResponse = generateMockResponse(message, projectContext);
     }
 
-    // Generate AI response
-    // Admin users get real Claude AI (if configured), others get mock
-    const useRealAI = req.isAdmin && anthropicClient !== null;
-    const aiResponse = await generateAIResponse(message, projectContext, useRealAI);
+    if (!aiResponse || !aiResponse.trim()) aiResponse = generateMockResponse(message, projectContext);
 
-    // Save AI response to history
-    if (projectId) {
-      const project = db.prepare('SELECT id FROM projects WHERE share_id = ?').get(projectId);
-      if (project) {
-        db.prepare('INSERT INTO chat_history (project_id, role, message) VALUES (?, ?, ?)').run(project.id, 'assistant', aiResponse);
-      }
-    }
+    saveTurn('assistant', aiResponse);
 
-    res.json({
-      success: true,
-      response: aiResponse,
-      isRealAI: useRealAI
-    });
+    res.json({ success: true, response: aiResponse, limited });
   } catch (error) {
     console.error('Error in chat:', error);
     res.status(500).json({ success: false, error: 'Ошибка чата' });

@@ -267,6 +267,71 @@ class RenovationCalculator {
   }
 
   /**
+   * Resolve a room's selected options into a visual "finish profile" that the
+   * 3D viewer can render. Robust to extra/renamed options: matches on the
+   * option key and the Russian name within each category.
+   */
+  getRoomFinishes(roomIndex) {
+    const sel = this.selectedOptions[roomIndex] || {};
+    const selected = this.pricingOptions.filter(o => sel[o.name_key]);
+    const text = (o) => (o.name_key + ' ' + (o.name_ru || '')).toLowerCase();
+
+    // First value whose regex matches any selected option in `category`.
+    const pick = (category, rules) => {
+      for (const [value, re] of rules) {
+        if (selected.some(o => o.category === category && re.test(text(o)))) return value;
+      }
+      return null;
+    };
+    const hasKey = (k) => selected.some(o => o.name_key === k);
+    const hasText = (re) => selected.some(o => re.test(text(o)));
+
+    const floor = pick('floors', [
+      ['tile', /tile|плитк|керамогранит|porcelain/],
+      ['wood', /laminate|parquet|ламинат|паркет/],
+      ['linoleum', /linoleum|линолеум/],
+      ['smooth', /self_leveling|наливн/]
+    ]);
+    const wall = pick('walls', [
+      ['tile', /wall_tiles|керамическ|плитк/],
+      ['plaster', /plaster|штукатурк/],
+      ['wallpaper', /wallpaper|обои/],
+      ['panels', /panel|панел|пвх/],
+      ['paint', /paint|покраск/]
+    ]);
+    const ceiling = pick('ceiling', [
+      ['multilevel', /multilevel|многоуровн/],
+      ['stretch', /stretch|натяжн/],
+      ['drywall', /drywall|гипсокартон/],
+      ['paint', /paint|покраск|leveling|выравн/]
+    ]);
+
+    return {
+      floor,
+      wall,
+      ceiling,
+      molding: hasText(/molding|карниз/),
+      lighting: hasText(/light|освещ/),
+      outlets: hasText(/outlet|розетк|switch|выключ/),
+      plumbing: {
+        bathtub: hasKey('bathtub_install') || hasText(/ванн/),
+        shower: hasText(/shower|душев/),
+        toilet: hasText(/toilet|унитаз/) || hasKey('plumbing_fixtures'),
+        sink: hasText(/sink|раковин|faucet|смесител/) || hasKey('plumbing_fixtures'),
+        washer: hasText(/washer_connect|стиральн/)
+      }
+    };
+  }
+
+  /**
+   * Names of the works selected for a room (for the AI chat context).
+   */
+  getSelectedOptionNames(roomIndex) {
+    const sel = this.selectedOptions[roomIndex] || {};
+    return this.pricingOptions.filter(o => sel[o.name_key]).map(o => o.name_ru);
+  }
+
+  /**
    * Get summary data for export
    */
   getSummaryData() {

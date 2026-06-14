@@ -66,15 +66,15 @@ async function init() {
   // Set calculator update callback
   calculator.onUpdate((total) => {
     updateTotalDisplay();
+    // Reflect the newly (de)selected works in the 3D view
+    if (selectedRoomIndex >= 0 && viewer3d) {
+      viewer3d.updateFinishes(calculator.getRoomFinishes(selectedRoomIndex));
+    }
   });
 
   // Initialize chat
   chat = new RenovationChat({
-    getProjectContext: () => ({
-      rooms: rooms,
-      totalCost: calculator.calculateTotal(),
-      totalArea: calculator.calculateTotalArea()
-    })
+    getProjectContext: buildChatContext
   });
 
   // Setup event listeners
@@ -231,8 +231,8 @@ function selectRoom(index) {
   selectedRoomIndex = index;
   const room = rooms[index];
 
-  // Update 3D viewer
-  viewer3d.createRoom(room);
+  // Update 3D viewer with this room's selected finishes
+  viewer3d.createRoom(room, calculator.getRoomFinishes(index), { recenter: true });
 
   // Update room info
   const area = (room.width * room.length).toFixed(1);
@@ -303,6 +303,23 @@ function updateRoomsList() {
     roomEl.addEventListener('click', () => selectRoom(index));
     elements.roomsList.appendChild(roomEl);
   });
+}
+
+/**
+ * Build a compact project snapshot for the AI chat (kept small to limit tokens).
+ */
+function buildChatContext() {
+  return {
+    rooms: rooms.map((r, i) => ({
+      name: r.name,
+      size: `${r.width}x${r.length}x${r.height}м`,
+      area: +(r.width * r.length).toFixed(1),
+      works: calculator.getSelectedOptionNames(i)
+    })),
+    currentRoom: selectedRoomIndex >= 0 ? rooms[selectedRoomIndex]?.name : null,
+    totalArea: +calculator.calculateTotalArea().toFixed(1),
+    totalCost: calculator.calculateTotal()
+  };
 }
 
 /**
