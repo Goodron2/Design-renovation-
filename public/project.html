@@ -89,10 +89,12 @@
   </div>
 
   <script src="/js/room3d.js"></script>
+  <script src="/js/calculator.js"></script>
   <script>
     // State
     let project = null;
     let pricingOptions = {};
+    let pricingArray = [];
     let viewer3d = null;
 
     // Category names
@@ -122,7 +124,8 @@
         const pricingResponse = await fetch('/api/pricing');
         const pricingData = await pricingResponse.json();
         if (pricingData.success) {
-          pricingData.options.forEach(opt => {
+          pricingArray = pricingData.options || [];
+          pricingArray.forEach(opt => {
             pricingOptions[opt.name_key] = opt;
           });
         }
@@ -189,16 +192,24 @@
 
       roomSelector.addEventListener('change', (e) => {
         const index = parseInt(e.target.value);
-        if (viewer3d && project.rooms[index]) {
-          viewer3d.createRoom(project.rooms[index]);
-        }
+        if (viewer3d) viewer3d.setSelected(index);
       });
 
-      // Initialize 3D viewer
-      viewer3d = new Room3DViewer('viewer3d');
-      if (project.rooms.length > 0) {
-        viewer3d.createRoom(project.rooms[0]);
+      // Build per-room finishes from the saved selections (same logic as the calculator)
+      let finishesList = project.rooms.map(() => ({}));
+      try {
+        const calc = new RenovationCalculator();
+        calc.pricingOptions = pricingArray;
+        calc.setRooms(project.rooms);
+        calc.setSelectedOptions(project.selected_options || {});
+        finishesList = project.rooms.map((_, i) => calc.getRoomFinishes(i));
+      } catch (e) {
+        console.error('Finishes build error:', e);
       }
+
+      // Initialize 3D viewer with ALL rooms at once
+      viewer3d = new Room3DViewer('viewer3d');
+      viewer3d.render(project.rooms, finishesList, project.rooms.length ? 0 : -1, { recenter: true });
 
       // Render room details
       renderRoomDetails();

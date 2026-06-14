@@ -66,9 +66,11 @@ async function init() {
   // Set calculator update callback
   calculator.onUpdate((total) => {
     updateTotalDisplay();
-    // Reflect the newly (de)selected works in the 3D view
+    // Reflect the newly (de)selected works in the 3D view for that room.
+    // Wrapped so a render hiccup can never block cost calculation.
     if (selectedRoomIndex >= 0 && viewer3d) {
-      viewer3d.updateFinishes(calculator.getRoomFinishes(selectedRoomIndex));
+      try { viewer3d.updateRoom(selectedRoomIndex, calculator.getRoomFinishes(selectedRoomIndex)); }
+      catch (e) { console.error('3D update error:', e); }
     }
   });
 
@@ -83,8 +85,28 @@ async function init() {
   // Check if loading existing project from URL
   checkForExistingProject();
 
-  // Update UI
+  // Update UI + initial 3D (placeholder until a room is added)
   updateUI();
+  rerenderRooms(false);
+}
+
+/**
+ * Finishes for every room (for the all-rooms 3D view).
+ */
+function getAllFinishes() {
+  return rooms.map((_, i) => calculator.getRoomFinishes(i));
+}
+
+/**
+ * Render every room in the 3D viewer. recenter=true refits the camera.
+ */
+function rerenderRooms(recenter) {
+  if (!viewer3d) return;
+  try {
+    viewer3d.render(rooms, getAllFinishes(), selectedRoomIndex, { recenter: !!recenter });
+  } catch (e) {
+    console.error('3D render error:', e);
+  }
 }
 
 /**
@@ -188,8 +210,11 @@ function saveRoom() {
   calculator.setRooms(rooms);
   updateUI();
 
-  // Select the new/edited room
-  selectRoom(editingRoomIndex >= 0 ? editingRoomIndex : rooms.length - 1);
+  // Re-render all rooms (a room was added or resized), refit camera, then select it
+  const target = editingRoomIndex >= 0 ? editingRoomIndex : rooms.length - 1;
+  selectedRoomIndex = target;
+  rerenderRooms(true);
+  selectRoom(target);
 }
 
 /**
@@ -214,10 +239,19 @@ function deleteRoom(index) {
 
     // Adjust selection
     if (selectedRoomIndex === index) {
+      // The selected room was deleted: clear the selection
       selectedRoomIndex = -1;
-      viewer3d.showPlaceholder();
-    } else if (selectedRoomIndex > index) {
-      selectedRoomIndex--;
+      elements.noRoomSelected.classList.remove('hidden');
+      elements.optionsPanel.classList.add('hidden');
+      elements.currentRoomInfo.textContent = 'Выберите комнату';
+      rerenderRooms(true);
+    } else {
+      // A different room was deleted: keep the same room selected (fixing its
+      // index) and re-bind the options panel, whose click handlers captured the
+      // old roomIndex.
+      if (selectedRoomIndex > index) selectedRoomIndex--;
+      rerenderRooms(true);
+      if (selectedRoomIndex >= 0) selectRoom(selectedRoomIndex);
     }
 
     updateUI();
@@ -231,8 +265,8 @@ function selectRoom(index) {
   selectedRoomIndex = index;
   const room = rooms[index];
 
-  // Update 3D viewer with this room's selected finishes
-  viewer3d.createRoom(room, calculator.getRoomFinishes(index), { recenter: true });
+  // Highlight this room in the all-rooms 3D view (no full rebuild)
+  if (viewer3d) viewer3d.setSelected(index);
 
   // Update room info
   const area = (room.width * room.length).toFixed(1);
@@ -470,12 +504,15 @@ async function loadProject(projectId) {
         chat.loadHistory(data.chatHistory);
       }
 
-      // Update UI
+      // Update UI + render all rooms
       updateUI();
 
-      // Select first room if any
       if (rooms.length > 0) {
+        selectedRoomIndex = 0;
+        rerenderRooms(true);
         selectRoom(0);
+      } else {
+        rerenderRooms(true);
       }
 
       elements.exportExcelBtn.disabled = false;

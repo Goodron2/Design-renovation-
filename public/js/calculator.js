@@ -199,6 +199,9 @@ class RenovationCalculator {
    * Render options for a room in the UI
    */
   renderOptions(roomIndex, containers) {
+    // Escape admin-editable strings before inserting them as HTML.
+    const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, c =>
+      ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
     const categories = {
       walls: containers.wallOptions,
       floors: containers.floorOptions,
@@ -234,24 +237,25 @@ class RenovationCalculator {
         optionEl.className = `option-item ${isSelected ? 'selected' : ''}`;
         optionEl.innerHTML = `
           <input type="checkbox"
-                 id="opt_${option.name_key}"
+                 id="opt_${esc(option.name_key)}"
                  ${isSelected ? 'checked' : ''}>
           <div class="option-info">
-            <span class="option-name">${option.name_ru}</span>
-            <span class="option-price">${option.price_per_sqm} ₽/${option.unit}</span>
+            <span class="option-name">${esc(option.name_ru)}</span>
+            <span class="option-price">${Number(option.price_per_sqm)} ₽/${esc(option.unit)}</span>
           </div>
           <span class="option-cost">${cost.toLocaleString('ru-RU')} ₽</span>
         `;
 
-        // Handle click on entire option item
+        // Handle click on the entire option row (checkbox or label area)
         optionEl.addEventListener('click', (e) => {
-          if (e.target.type !== 'checkbox') {
-            const checkbox = optionEl.querySelector('input[type="checkbox"]');
+          const checkbox = optionEl.querySelector('input[type="checkbox"]');
+          // If the click was not on the checkbox itself, flip it manually.
+          // (Never assign to e.target: Event.target is read-only and throws in
+          // strict mode, which previously froze the whole calculator.)
+          if (e.target !== checkbox) {
             checkbox.checked = !checkbox.checked;
-            e.target = checkbox;
           }
 
-          const checkbox = optionEl.querySelector('input[type="checkbox"]');
           this.toggleOption(roomIndex, option.name_key, checkbox.checked);
           optionEl.classList.toggle('selected', checkbox.checked);
 
