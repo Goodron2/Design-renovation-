@@ -6,9 +6,7 @@
 // Global state
 let rooms = [];
 let selectedRoomIndex = -1;
-let floorPlan = null;
 let viewer3d = null;
-let currentView = '2d';
 let calculator = null;
 let chat = null;
 let currentProjectId = null;
@@ -17,31 +15,18 @@ let currentProjectId = null;
 const elements = {
   roomsList: document.getElementById('roomsList'),
   addRoomBtn: document.getElementById('addRoomBtn'),
-  drawRoomBtn: document.getElementById('drawRoomBtn'),
   roomEditor: document.getElementById('roomEditor'),
   roomEditorTitle: document.getElementById('roomEditorTitle'),
   roomName: document.getElementById('roomName'),
   roomWidth: document.getElementById('roomWidth'),
   roomLength: document.getElementById('roomLength'),
   roomHeight: document.getElementById('roomHeight'),
-  roomShape: document.getElementById('roomShape'),
-  lShapeFields: document.getElementById('lShapeFields'),
-  tShapeFields: document.getElementById('tShapeFields'),
-  cutWidth: document.getElementById('cutWidth'),
-  cutLength: document.getElementById('cutLength'),
-  cutCorner: document.getElementById('cutCorner'),
-  stemWidth: document.getElementById('stemWidth'),
-  stemLength: document.getElementById('stemLength'),
-  stemPosition: document.getElementById('stemPosition'),
   saveRoomBtn: document.getElementById('saveRoomBtn'),
   cancelRoomBtn: document.getElementById('cancelRoomBtn'),
-  zoomInBtn: document.getElementById('zoomInBtn'),
-  zoomOutBtn: document.getElementById('zoomOutBtn'),
-  fitViewBtn: document.getElementById('fitViewBtn'),
+  resetViewBtn: document.getElementById('resetViewBtn'),
   currentRoomInfo: document.getElementById('currentRoomInfo'),
   noRoomSelected: document.getElementById('noRoomSelected'),
   optionsPanel: document.getElementById('optionsPanel'),
-  viewerPlaceholder: document.getElementById('viewerPlaceholder'),
   totalRooms: document.getElementById('totalRooms'),
   totalArea: document.getElementById('totalArea'),
   totalCost: document.getElementById('totalCost'),
@@ -51,7 +36,8 @@ const elements = {
   shareModal: document.getElementById('shareModal'),
   shareLink: document.getElementById('shareLink'),
   copyLinkBtn: document.getElementById('copyLinkBtn'),
-  furniturePanel: document.getElementById('furniturePanel')
+  wallColor: document.getElementById('wallColor'),
+  floorColor: document.getElementById('floorColor')
 };
 
 // Options containers
@@ -63,51 +49,15 @@ const optionContainers = {
   plumbingOptions: document.getElementById('plumbingOptions')
 };
 
-// Subtotal elements
-const subtotalElements = {
-  walls: document.getElementById('subtotal_walls'),
-  floors: document.getElementById('subtotal_floors'),
-  ceiling: document.getElementById('subtotal_ceiling'),
-  electrical: document.getElementById('subtotal_electrical'),
-  plumbing: document.getElementById('subtotal_plumbing')
-};
-
 // Editing state
 let editingRoomIndex = -1;
-
-/**
- * Normalize old-format room for backward compatibility
- */
-function normalizeRoom(room) {
-  return RoomShapes.normalizeRoom(room);
-}
-
-/**
- * Get the currently active viewer (2D or 3D)
- */
-function activeViewer() {
-  return currentView === '3d' && viewer3d ? viewer3d : floorPlan;
-}
 
 /**
  * Initialize application
  */
 async function init() {
-  // Initialize floor plan viewer
-  floorPlan = new FloorPlanViewer('floorplanViewer');
-  floorPlan.onRoomSelect = (index) => {
-    if (index >= 0) {
-      selectRoom(index);
-    } else {
-      deselectRoom();
-    }
-  };
-  floorPlan.onRoomMoved = (index) => {
-    // Room was dragged, update data
-    if (viewer3d && currentView === '3d') {
-      viewer3d.setRooms(rooms);
-    }
-  };
+  // Initialize 3D viewer
+  viewer3d = new Room3DViewer('viewer3d');
 
   // Initialize calculator and load pricing
   calculator = new RenovationCalculator();
@@ -116,16 +66,17 @@ async function init() {
   // Set calculator update callback
   calculator.onUpdate((total) => {
     updateTotalDisplay();
-    updateCategorySubtotals();
+    // Reflect the newly (de)selected works in the 3D view for that room.
+    // Wrapped so a render hiccup can never block cost calculation.
+    if (selectedRoomIndex >= 0 && viewer3d) {
+      try { viewer3d.updateRoom(selectedRoomIndex, calculator.getRoomFinishes(selectedRoomIndex)); }
+      catch (e) { console.error('3D update error:', e); }
+    }
   });
 
   // Initialize chat
   chat = new RenovationChat({
-    getProjectContext: () => ({
-      rooms: rooms,
-      totalCost: calculator.calculateTotal(),
-      totalArea: calculator.calculateTotalArea()
-    })
+    getProjectContext: buildChatContext
   });
 
   // Setup event listeners
@@ -134,44 +85,43 @@ async function init() {
   // Check if loading existing project from URL
   checkForExistingProject();
 
-  // Update UI
+  // Update UI + initial 3D (placeholder until a room is added)
   updateUI();
+  rerenderRooms(false);
+}
+
+/**
+ * Finishes for every room (for the all-rooms 3D view).
+ */
+function getAllFinishes() {
+  return rooms.map((_, i) => calculator.getRoomFinishes(i));
+}
+
+/**
+ * Render every room in the 3D viewer. recenter=true refits the camera.
+ */
+function rerenderRooms(recenter) {
+  if (!viewer3d) return;
+  try {
+    viewer3d.render(rooms, getAllFinishes(), selectedRoomIndex, { recenter: !!recenter });
+  } catch (e) {
+    console.error('3D render error:', e);
+  }
 }
 
 /**
  * Setup all event listeners
  */
 function setupEventListeners() {
+  // Add room button
   elements.addRoomBtn.addEventListener('click', () => showRoomEditor());
 
-  // Draw Room button
-  if (elements.drawRoomBtn) {
-    elements.drawRoomBtn.addEventListener('click', () => enterDrawMode());
-  }
-
+  // Room editor buttons
   elements.saveRoomBtn.addEventListener('click', saveRoom);
   elements.cancelRoomBtn.addEventListener('click', hideRoomEditor);
 
-  // Zoom controls
-  elements.zoomInBtn.addEventListener('click', () => activeViewer().zoomIn());
-  elements.zoomOutBtn.addEventListener('click', () => activeViewer().zoomOut());
-  elements.fitViewBtn.addEventListener('click', () => activeViewer().fitToView());
-
-  // 2D/3D view toggle
-  var toggleBtns = document.querySelectorAll('#viewToggle .view-toggle-btn');
-  toggleBtns.forEach(function(btn) {
-    btn.addEventListener('click', function() {
-      var viewMode = btn.dataset.view;
-      if (viewMode === currentView) return;
-      switchView(viewMode);
-      toggleBtns.forEach(function(b) { b.classList.toggle('active', b.dataset.view === viewMode); });
-    });
-  });
-
-  // Shape selector toggle
-  elements.roomShape.addEventListener('change', () => {
-    updateShapeFields();
-  });
+  // Reset 3D view
+  elements.resetViewBtn.addEventListener('click', () => viewer3d.resetView());
 
   // Tab switching
   document.querySelectorAll('.tab-btn').forEach(btn => {
@@ -181,171 +131,20 @@ function setupEventListeners() {
     });
   });
 
+  // Color pickers
+  elements.wallColor.addEventListener('input', (e) => {
+    viewer3d.setWallColor(e.target.value);
+  });
+
+  elements.floorColor.addEventListener('input', (e) => {
+    viewer3d.setFloorColor(e.target.value);
+  });
+
   // Project actions
   elements.saveProjectBtn.addEventListener('click', saveProject);
   elements.exportExcelBtn.addEventListener('click', exportToExcel);
   elements.shareProjectBtn.addEventListener('click', shareProject);
   elements.copyLinkBtn.addEventListener('click', copyShareLink);
-
-  // Global keyboard shortcuts
-  document.addEventListener('keydown', function(e) {
-    // Don't handle keys when typing in inputs
-    var tag = e.target.tagName;
-    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
-
-    // Delete selected room
-    if (e.key === 'Delete' && selectedRoomIndex >= 0) {
-      e.preventDefault();
-      deleteRoom(selectedRoomIndex);
-      return;
-    }
-
-    // Furniture keys (R to rotate, Del handled above)
-    if (floorPlan && floorPlan.handleFurnitureKey(e)) {
-      e.preventDefault();
-    }
-  });
-
-  // Initialize furniture panel if it exists
-  if (elements.furniturePanel && typeof FurnitureCatalog !== 'undefined') {
-    renderFurnitureCatalog();
-  }
-}
-
-/**
- * Enter wall-drawing mode
- */
-function enterDrawMode() {
-  if (currentView === '3d') {
-    switchView('2d');
-    var toggleBtns = document.querySelectorAll('#viewToggle .view-toggle-btn');
-    toggleBtns.forEach(function(b) { b.classList.toggle('active', b.dataset.view === '2d'); });
-  }
-
-  if (elements.drawRoomBtn) {
-    elements.drawRoomBtn.textContent = 'Отмена рисования';
-    elements.drawRoomBtn.classList.add('btn-danger');
-  }
-
-  floorPlan.enterDrawMode(
-    // onComplete
-    function(vertices, position) {
-      if (elements.drawRoomBtn) {
-        elements.drawRoomBtn.textContent = 'Нарисовать';
-        elements.drawRoomBtn.classList.remove('btn-danger');
-      }
-      // Create custom room, then open name/height editor
-      var room = {
-        name: 'Комната',
-        height: 2.7,
-        shape: 'custom',
-        params: { vertices: vertices, width: 0, length: 0 },
-        position: position,
-        rotation: 0,
-        quantities: {},
-        furniture: []
-      };
-      // Calculate bounding box for width/length hints
-      var bb = RoomShapes.getBoundingBox(room);
-      room.params.width = +bb.width.toFixed(2);
-      room.params.length = +bb.height.toFixed(2);
-
-      rooms.push(room);
-      calculator.setRooms(rooms);
-      updateFloorPlan();
-      updateUI();
-      // Select the new room and open editor for name/height
-      var newIndex = rooms.length - 1;
-      selectRoom(newIndex);
-      showCustomRoomEditor(newIndex);
-    },
-    // onCancel
-    function() {
-      if (elements.drawRoomBtn) {
-        elements.drawRoomBtn.textContent = 'Нарисовать';
-        elements.drawRoomBtn.classList.remove('btn-danger');
-      }
-    }
-  );
-}
-
-/**
- * Show simplified editor for a custom-drawn room (just name + height)
- */
-function showCustomRoomEditor(roomIndex) {
-  editingRoomIndex = roomIndex;
-  var room = rooms[roomIndex];
-  elements.roomEditorTitle.textContent = 'Настроить комнату';
-  elements.roomName.value = room.name;
-  elements.roomHeight.value = room.height;
-  elements.roomShape.value = 'custom';
-
-  // Hide shape-specific fields and dimension fields for custom rooms
-  elements.lShapeFields.classList.add('hidden');
-  elements.tShapeFields.classList.add('hidden');
-  // Hide width/length fields
-  var dimFields = document.getElementById('dimensionFields');
-  if (dimFields) dimFields.classList.add('hidden');
-  var shapeGroup = document.getElementById('shapeGroup');
-  if (shapeGroup) shapeGroup.classList.add('hidden');
-
-  elements.roomEditor.classList.remove('hidden');
-}
-
-/**
- * Switch between 2D and 3D views
- */
-function switchView(viewMode) {
-  currentView = viewMode;
-
-  if (viewMode === '3d') {
-    var konvaContent = document.querySelector('#floorplanViewer .konvajs-content');
-    if (konvaContent) konvaContent.style.display = 'none';
-
-    if (!viewer3d) {
-      viewer3d = new Viewer3D('floorplanViewer');
-      viewer3d.onRoomSelect = function(index) {
-        if (index >= 0) {
-          selectRoom(index);
-        } else {
-          deselectRoom();
-        }
-      };
-    }
-
-    viewer3d.setRooms(rooms);
-    if (selectedRoomIndex >= 0) {
-      viewer3d.selectRoom(selectedRoomIndex);
-    }
-    viewer3d.show();
-  } else {
-    if (viewer3d) {
-      viewer3d.hide();
-    }
-
-    var konvaContent = document.querySelector('#floorplanViewer .konvajs-content');
-    if (konvaContent) konvaContent.style.display = 'block';
-
-    if (floorPlan && floorPlan.stage) {
-      floorPlan._onResize();
-      floorPlan.stage.batchDraw();
-    }
-  }
-}
-
-/**
- * Show/hide shape-specific fields in room editor
- */
-function updateShapeFields() {
-  const shape = elements.roomShape.value;
-  elements.lShapeFields.classList.toggle('hidden', shape !== 'l_shape');
-  elements.tShapeFields.classList.toggle('hidden', shape !== 't_shape');
-
-  // Show/hide dimension fields for custom
-  var dimFields = document.getElementById('dimensionFields');
-  if (dimFields) dimFields.classList.toggle('hidden', shape === 'custom');
-  var shapeGroup = document.getElementById('shapeGroup');
-  if (shapeGroup) shapeGroup.classList.toggle('hidden', shape === 'custom');
 }
 
 /**
@@ -354,47 +153,23 @@ function updateShapeFields() {
 function showRoomEditor(roomIndex = -1) {
   editingRoomIndex = roomIndex;
 
-  // Show all fields
-  var dimFields = document.getElementById('dimensionFields');
-  if (dimFields) dimFields.classList.remove('hidden');
-  var shapeGroup = document.getElementById('shapeGroup');
-  if (shapeGroup) shapeGroup.classList.remove('hidden');
-
   if (roomIndex >= 0) {
-    const room = normalizeRoom(rooms[roomIndex]);
+    // Editing existing room
+    const room = rooms[roomIndex];
     elements.roomEditorTitle.textContent = 'Редактировать комнату';
     elements.roomName.value = room.name;
-    elements.roomShape.value = room.shape || 'rectangle';
-    elements.roomWidth.value = room.params.width;
-    elements.roomLength.value = room.params.length;
+    elements.roomWidth.value = room.width;
+    elements.roomLength.value = room.length;
     elements.roomHeight.value = room.height;
-
-    if (room.shape === 'l_shape') {
-      elements.cutWidth.value = room.params.cutWidth || 2;
-      elements.cutLength.value = room.params.cutLength || 2;
-      elements.cutCorner.value = room.params.cutCorner || 'top_right';
-    }
-    if (room.shape === 't_shape') {
-      elements.stemWidth.value = room.params.stemWidth || 2;
-      elements.stemLength.value = room.params.stemLength || 3;
-      elements.stemPosition.value = room.params.stemPosition || 'bottom_center';
-    }
-
-    // Hide shape/dimension fields for custom rooms
-    if (room.shape === 'custom') {
-      if (dimFields) dimFields.classList.add('hidden');
-      if (shapeGroup) shapeGroup.classList.add('hidden');
-    }
   } else {
+    // New room
     elements.roomEditorTitle.textContent = 'Новая комната';
     elements.roomName.value = 'Гостиная';
-    elements.roomShape.value = 'rectangle';
     elements.roomWidth.value = 4;
     elements.roomLength.value = 5;
     elements.roomHeight.value = 2.7;
   }
 
-  updateShapeFields();
   elements.roomEditor.classList.remove('hidden');
 }
 
@@ -410,68 +185,36 @@ function hideRoomEditor() {
  * Save room from editor
  */
 function saveRoom() {
-  const shape = elements.roomShape.value;
-
-  if (editingRoomIndex >= 0 && rooms[editingRoomIndex] && rooms[editingRoomIndex].shape === 'custom') {
-    // For custom rooms, only update name and height
-    rooms[editingRoomIndex].name = elements.roomName.value;
-    rooms[editingRoomIndex].height = parseFloat(elements.roomHeight.value) || 2.7;
-    hideRoomEditor();
-    calculator.setRooms(rooms);
-    updateFloorPlan();
-    updateUI();
-    selectRoom(editingRoomIndex);
-    return;
-  }
-
-  const params = {
+  const room = {
+    name: elements.roomName.value,
     width: parseFloat(elements.roomWidth.value) || 4,
-    length: parseFloat(elements.roomLength.value) || 5
+    length: parseFloat(elements.roomLength.value) || 5,
+    height: parseFloat(elements.roomHeight.value) || 2.7
   };
 
-  if (shape === 'l_shape') {
-    params.cutWidth = parseFloat(elements.cutWidth.value) || 2;
-    params.cutLength = parseFloat(elements.cutLength.value) || 2;
-    params.cutCorner = elements.cutCorner.value;
-  }
-  if (shape === 't_shape') {
-    params.stemWidth = parseFloat(elements.stemWidth.value) || 2;
-    params.stemLength = parseFloat(elements.stemLength.value) || 3;
-    params.stemPosition = elements.stemPosition.value;
-  }
-
-  if (params.width < 1 || params.length < 1) {
+  // Validate
+  if (room.width < 1 || room.length < 1 || room.height < 2) {
     alert('Пожалуйста, введите корректные размеры комнаты');
     return;
   }
 
-  const room = {
-    name: elements.roomName.value,
-    height: parseFloat(elements.roomHeight.value) || 2.7,
-    shape: shape,
-    params: params,
-    position: { x: 0, y: 0 },
-    rotation: 0,
-    quantities: {},
-    furniture: []
-  };
-
   if (editingRoomIndex >= 0) {
-    const old = rooms[editingRoomIndex];
-    if (old.position) room.position = old.position;
-    if (old.quantities) room.quantities = old.quantities;
-    if (old.furniture) room.furniture = old.furniture;
+    // Update existing room
     rooms[editingRoomIndex] = room;
   } else {
+    // Add new room
     rooms.push(room);
   }
 
   hideRoomEditor();
   calculator.setRooms(rooms);
-  updateFloorPlan();
   updateUI();
 
-  selectRoom(editingRoomIndex >= 0 ? editingRoomIndex : rooms.length - 1);
+  // Re-render all rooms (a room was added or resized), refit camera, then select it
+  const target = editingRoomIndex >= 0 ? editingRoomIndex : rooms.length - 1;
+  selectedRoomIndex = target;
+  rerenderRooms(true);
+  selectRoom(target);
 }
 
 /**
@@ -481,6 +224,7 @@ function deleteRoom(index) {
   if (confirm('Удалить эту комнату?')) {
     rooms.splice(index, 1);
 
+    // Update selected options indices
     const newSelectedOptions = {};
     Object.keys(calculator.selectedOptions).forEach(key => {
       const oldIndex = parseInt(key);
@@ -493,18 +237,24 @@ function deleteRoom(index) {
     calculator.setSelectedOptions(newSelectedOptions);
     calculator.setRooms(rooms);
 
+    // Adjust selection
     if (selectedRoomIndex === index) {
+      // The selected room was deleted: clear the selection
       selectedRoomIndex = -1;
-    } else if (selectedRoomIndex > index) {
-      selectedRoomIndex--;
+      elements.noRoomSelected.classList.remove('hidden');
+      elements.optionsPanel.classList.add('hidden');
+      elements.currentRoomInfo.textContent = 'Выберите комнату';
+      rerenderRooms(true);
+    } else {
+      // A different room was deleted: keep the same room selected (fixing its
+      // index) and re-bind the options panel, whose click handlers captured the
+      // old roomIndex.
+      if (selectedRoomIndex > index) selectedRoomIndex--;
+      rerenderRooms(true);
+      if (selectedRoomIndex >= 0) selectRoom(selectedRoomIndex);
     }
 
-    updateFloorPlan();
     updateUI();
-
-    if (selectedRoomIndex < 0) {
-      deselectRoom();
-    }
   }
 }
 
@@ -513,150 +263,38 @@ function deleteRoom(index) {
  */
 function selectRoom(index) {
   selectedRoomIndex = index;
-  const room = normalizeRoom(rooms[index]);
+  const room = rooms[index];
 
-  floorPlan.selectRoom(index);
-  if (viewer3d) {
-    viewer3d.selectRoom(index);
-  }
+  // Highlight this room in the all-rooms 3D view (no full rebuild)
+  if (viewer3d) viewer3d.setSelected(index);
 
-  // Build room info text
-  var area = RoomShapes.calculateRoomArea(room).toFixed(1);
-  var infoText;
-  if (room.shape === 'custom') {
-    infoText = room.name + ': ' + area + ' м\u00B2, h=' + room.height + 'м';
-  } else {
-    var p = room.params;
-    infoText = room.name + ': ' + p.width + 'м \u00D7 ' + p.length + 'м \u00D7 ' + room.height + 'м (' + area + ' м\u00B2)';
-  }
-  elements.currentRoomInfo.textContent = infoText;
+  // Update room info
+  const area = (room.width * room.length).toFixed(1);
+  elements.currentRoomInfo.textContent = `${room.name}: ${room.width}м × ${room.length}м × ${room.height}м (${area} м²)`;
 
+  // Show options panel
   elements.noRoomSelected.classList.add('hidden');
   elements.optionsPanel.classList.remove('hidden');
 
-  if (elements.viewerPlaceholder) {
-    elements.viewerPlaceholder.style.display = 'none';
-  }
-
+  // Render options for this room
   calculator.renderOptions(index, optionContainers);
-  updateCategorySubtotals();
+
+  // Update rooms list UI
   updateRoomsList();
-}
-
-/**
- * Deselect room
- */
-function deselectRoom() {
-  selectedRoomIndex = -1;
-
-  if (viewer3d) {
-    viewer3d.deselectAll();
-  }
-
-  elements.noRoomSelected.classList.remove('hidden');
-  elements.optionsPanel.classList.add('hidden');
-  elements.currentRoomInfo.textContent = 'Выберите комнату';
-  updateRoomsList();
-}
-
-/**
- * Update the floor plan with current rooms
- */
-function updateFloorPlan() {
-  if (rooms.length > 0) {
-    if (elements.viewerPlaceholder) {
-      elements.viewerPlaceholder.style.display = 'none';
-    }
-    floorPlan.setRooms(rooms);
-    floorPlan.fitToView();
-
-    if (viewer3d && currentView === '3d') {
-      viewer3d.setRooms(rooms);
-      viewer3d.fitToView();
-    }
-  } else {
-    if (elements.viewerPlaceholder) {
-      elements.viewerPlaceholder.style.display = 'block';
-    }
-    floorPlan.setRooms([]);
-    if (viewer3d && currentView === '3d') {
-      viewer3d.setRooms([]);
-    }
-  }
-}
-
-/**
- * Render the furniture catalog panel
- */
-function renderFurnitureCatalog() {
-  var panel = elements.furniturePanel;
-  if (!panel) return;
-
-  var categories = FurnitureCatalog.getCategories();
-  var html = '<h3 style="margin:0 0 12px">Мебель</h3>';
-
-  categories.forEach(function(cat) {
-    html += '<div class="furniture-category">';
-    html += '<h4 class="furniture-category-title" data-cat="' + cat.id + '">' + cat.name + '</h4>';
-    html += '<div class="furniture-items" id="furCat_' + cat.id + '" style="display:none">';
-
-    var items = FurnitureCatalog.getItems(cat.id);
-    items.forEach(function(item) {
-      html += '<div class="furniture-item" data-item-id="' + item.id + '">';
-      html += '<div class="furniture-item-preview" style="background:' + item.color + ';width:32px;height:32px;border-radius:4px;"></div>';
-      html += '<div class="furniture-item-info">';
-      html += '<span class="furniture-item-name">' + item.name + '</span>';
-      html += '<span class="furniture-item-dims">' + item.width + '\u00D7' + item.depth + 'м</span>';
-      html += '</div>';
-      html += '</div>';
-    });
-
-    html += '</div></div>';
-  });
-
-  panel.innerHTML = html;
-
-  // Category toggle
-  panel.querySelectorAll('.furniture-category-title').forEach(function(title) {
-    title.addEventListener('click', function() {
-      var catId = title.dataset.cat;
-      var itemsDiv = document.getElementById('furCat_' + catId);
-      if (itemsDiv) {
-        itemsDiv.style.display = itemsDiv.style.display === 'none' ? 'block' : 'none';
-      }
-    });
-  });
-
-  // Furniture item click to add
-  panel.querySelectorAll('.furniture-item').forEach(function(el) {
-    el.addEventListener('click', function() {
-      if (selectedRoomIndex < 0) {
-        alert('Сначала выберите комнату');
-        return;
-      }
-      var itemId = el.dataset.itemId;
-      var item = FurnitureCatalog.getItem(itemId);
-      if (item) {
-        floorPlan.addFurniture(selectedRoomIndex, item);
-        // Sync rooms data
-        rooms[selectedRoomIndex].furniture = floorPlan.rooms[selectedRoomIndex].furniture;
-        if (viewer3d && currentView === '3d') {
-          viewer3d.setRooms(rooms);
-        }
-      }
-    });
-  });
 }
 
 /**
  * Switch between tabs
  */
 function switchTab(tabName) {
+  // Update tab buttons
   document.querySelectorAll('.tab-btn').forEach(btn => {
     btn.classList.toggle('active', btn.dataset.tab === tabName);
   });
+
+  // Update tab content
   document.querySelectorAll('.tab-content').forEach(content => {
-    content.classList.toggle('active', content.id === tabName + 'Tab');
+    content.classList.toggle('active', content.id === `${tabName}Tab`);
   });
 }
 
@@ -667,35 +305,34 @@ function updateUI() {
   updateRoomsList();
   updateTotalDisplay();
 
+  // Enable/disable project actions
   const hasRooms = rooms.length > 0;
   elements.exportExcelBtn.disabled = !currentProjectId;
   elements.shareProjectBtn.disabled = !hasRooms;
 }
 
 /**
- * Update rooms list display with per-room costs
+ * Update rooms list display
  */
 function updateRoomsList() {
   elements.roomsList.innerHTML = '';
 
   rooms.forEach((room, index) => {
-    const normalized = normalizeRoom(room);
-    const area = RoomShapes.calculateRoomArea(normalized).toFixed(1);
-    const roomCost = calculator.calculateRoomCost(index);
+    const area = (room.width * room.length).toFixed(1);
     const isSelected = index === selectedRoomIndex;
 
     const roomEl = document.createElement('div');
-    roomEl.className = 'room-item ' + (isSelected ? 'active' : '');
-    roomEl.innerHTML =
-      '<div class="room-info">' +
-        '<span class="room-name">' + normalized.name + '</span>' +
-        '<span class="room-area">' + area + ' м\u00B2</span>' +
-      '</div>' +
-      '<div class="room-cost">' + roomCost.toLocaleString('ru-RU') + ' \u20BD</div>' +
-      '<div class="room-actions">' +
-        '<button onclick="event.stopPropagation(); showRoomEditor(' + index + ')">\u270F\uFE0F</button>' +
-        '<button onclick="event.stopPropagation(); deleteRoom(' + index + ')">\uD83D\uDDD1\uFE0F</button>' +
-      '</div>';
+    roomEl.className = `room-item ${isSelected ? 'active' : ''}`;
+    roomEl.innerHTML = `
+      <div class="room-info">
+        <span class="room-name">${room.name}</span>
+        <span class="room-area">${area} м²</span>
+      </div>
+      <div class="room-actions">
+        <button onclick="event.stopPropagation(); showRoomEditor(${index})">✏️</button>
+        <button onclick="event.stopPropagation(); deleteRoom(${index})">🗑️</button>
+      </div>
+    `;
 
     roomEl.addEventListener('click', () => selectRoom(index));
     elements.roomsList.appendChild(roomEl);
@@ -703,17 +340,20 @@ function updateRoomsList() {
 }
 
 /**
- * Update category subtotals
+ * Build a compact project snapshot for the AI chat (kept small to limit tokens).
  */
-function updateCategorySubtotals() {
-  if (selectedRoomIndex < 0) return;
-  const subtotals = calculator.getCategorySubtotals(selectedRoomIndex);
-  Object.entries(subtotalElements).forEach(([cat, el]) => {
-    if (el) {
-      const val = subtotals[cat] || 0;
-      el.textContent = val > 0 ? ('Итого: ' + val.toLocaleString('ru-RU') + ' \u20BD') : '';
-    }
-  });
+function buildChatContext() {
+  return {
+    rooms: rooms.map((r, i) => ({
+      name: r.name,
+      size: `${r.width}x${r.length}x${r.height}м`,
+      area: +(r.width * r.length).toFixed(1),
+      works: calculator.getSelectedOptionNames(i)
+    })),
+    currentRoom: selectedRoomIndex >= 0 ? rooms[selectedRoomIndex]?.name : null,
+    totalArea: +calculator.calculateTotalArea().toFixed(1),
+    totalCost: calculator.calculateTotal()
+  };
 }
 
 /**
@@ -721,8 +361,8 @@ function updateCategorySubtotals() {
  */
 function updateTotalDisplay() {
   elements.totalRooms.textContent = rooms.length;
-  elements.totalArea.textContent = calculator.calculateTotalArea().toFixed(1) + ' м\u00B2';
-  elements.totalCost.textContent = calculator.calculateTotal().toLocaleString('ru-RU') + ' \u20BD';
+  elements.totalArea.textContent = `${calculator.calculateTotalArea().toFixed(1)} м²`;
+  elements.totalCost.textContent = `${calculator.calculateTotal().toLocaleString('ru-RU')} ₽`;
 }
 
 /**
@@ -744,12 +384,14 @@ async function saveProject() {
 
     let response;
     if (currentProjectId) {
-      response = await fetch('/api/projects/' + currentProjectId, {
+      // Update existing project
+      response = await fetch(`/api/projects/${currentProjectId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(projectData)
       });
     } else {
+      // Create new project
       response = await fetch('/api/projects', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -763,8 +405,11 @@ async function saveProject() {
       if (!currentProjectId) {
         currentProjectId = data.shareId;
         chat.setProjectId(currentProjectId);
-        window.history.pushState({}, '', '/project/' + currentProjectId);
+
+        // Update URL without reload
+        window.history.pushState({}, '', `/project/${currentProjectId}`);
       }
+
       elements.exportExcelBtn.disabled = false;
       alert('Проект сохранён!');
     } else {
@@ -784,31 +429,38 @@ function exportToExcel() {
     alert('Сначала сохраните проект');
     return;
   }
-  window.location.href = '/api/export/' + currentProjectId;
+
+  window.location.href = `/api/export/${currentProjectId}`;
 }
 
 /**
- * Share project
+ * Share project (show modal with link)
  */
 async function shareProject() {
+  // Save first if not saved
   if (!currentProjectId) {
     await saveProject();
-    if (!currentProjectId) return;
+    if (!currentProjectId) return; // Save failed
   }
-  const shareUrl = window.location.origin + '/project/' + currentProjectId;
+
+  const shareUrl = `${window.location.origin}/project/${currentProjectId}`;
   elements.shareLink.value = shareUrl;
   elements.shareModal.classList.remove('hidden');
 }
 
 /**
- * Copy share link
+ * Copy share link to clipboard
  */
 function copyShareLink() {
   elements.shareLink.select();
   document.execCommand('copy');
+
+  // Show feedback
   const originalText = elements.copyLinkBtn.textContent;
   elements.copyLinkBtn.textContent = 'Скопировано!';
-  setTimeout(() => { elements.copyLinkBtn.textContent = originalText; }, 2000);
+  setTimeout(() => {
+    elements.copyLinkBtn.textContent = originalText;
+  }, 2000);
 }
 
 /**
@@ -824,7 +476,8 @@ function closeShareModal() {
 async function checkForExistingProject() {
   const pathMatch = window.location.pathname.match(/\/project\/([a-zA-Z0-9-]+)/);
   if (pathMatch) {
-    await loadProject(pathMatch[1]);
+    const projectId = pathMatch[1];
+    await loadProject(projectId);
   }
 }
 
@@ -833,27 +486,33 @@ async function checkForExistingProject() {
  */
 async function loadProject(projectId) {
   try {
-    const response = await fetch('/api/projects/' + projectId);
+    const response = await fetch(`/api/projects/${projectId}`);
     const data = await response.json();
 
     if (data.success) {
       const project = data.project;
-      currentProjectId = project.share_id;
 
-      rooms = project.rooms.map(r => normalizeRoom(r));
+      // Restore state
+      currentProjectId = project.share_id;
+      rooms = project.rooms;
       calculator.setRooms(rooms);
       calculator.setSelectedOptions(project.selected_options);
 
+      // Update chat
       chat.setProjectId(currentProjectId);
       if (data.chatHistory && data.chatHistory.length > 0) {
         chat.loadHistory(data.chatHistory);
       }
 
-      updateFloorPlan();
+      // Update UI + render all rooms
       updateUI();
 
       if (rooms.length > 0) {
+        selectedRoomIndex = 0;
+        rerenderRooms(true);
         selectRoom(0);
+      } else {
+        rerenderRooms(true);
       }
 
       elements.exportExcelBtn.disabled = false;
@@ -867,7 +526,6 @@ async function loadProject(projectId) {
 window.showRoomEditor = showRoomEditor;
 window.deleteRoom = deleteRoom;
 window.closeShareModal = closeShareModal;
-window.enterDrawMode = enterDrawMode;
 
 // Initialize when DOM is ready
 document.addEventListener('DOMContentLoaded', init);

@@ -125,7 +125,7 @@ html, body {
   overflow-y: auto;
 }
 
-/* Center Panel - Floor Plan Viewer */
+/* Center Panel - 3D Viewer */
 .panel-center {
   order: 1;
   flex: 1;
@@ -147,27 +147,15 @@ html, body {
   font-weight: 600;
 }
 
-.viewer-controls {
-  display: flex;
-  gap: 4px;
-}
-
-.viewer-controls .btn {
-  min-width: 32px;
-  padding: 4px 8px;
-  font-size: 1rem;
-  font-weight: bold;
-}
-
-/* Floor Plan Viewer */
-.floorplan-viewer {
+.viewer-3d {
   flex: 1;
   position: relative;
-  background: #fafbfc;
+  background: linear-gradient(135deg, #e0e7ff 0%, #f0f9ff 100%);
   overflow: hidden;
 }
 
-.floorplan-viewer .konvajs-content {
+.viewer-3d canvas {
+  display: block;
   width: 100% !important;
   height: 100% !important;
 }
@@ -179,8 +167,6 @@ html, body {
   transform: translate(-50%, -50%);
   text-align: center;
   color: var(--text-muted);
-  z-index: 5;
-  pointer-events: none;
 }
 
 .viewer-info {
@@ -356,13 +342,6 @@ html, body {
   margin-top: 16px;
 }
 
-/* Shape-specific fields */
-.shape-fields {
-  border-top: 1px solid var(--border-color);
-  padding-top: 12px;
-  margin-top: 8px;
-}
-
 /* ============================================
    Rooms List
    ============================================ */
@@ -380,7 +359,6 @@ html, body {
   border-radius: var(--radius-md);
   cursor: pointer;
   transition: all 0.2s;
-  gap: 8px;
 }
 
 .room-item:hover {
@@ -392,31 +370,21 @@ html, body {
   color: white;
 }
 
-.room-item.active .room-area,
-.room-item.active .room-cost {
+.room-item.active .room-area {
   color: rgba(255, 255, 255, 0.8);
 }
 
 .room-info {
   flex: 1;
-  min-width: 0;
 }
 
 .room-name {
   font-weight: 500;
-  display: block;
 }
 
 .room-area {
   font-size: 0.8rem;
   color: var(--text-muted);
-}
-
-.room-cost {
-  font-size: 0.8rem;
-  font-weight: 600;
-  color: var(--primary-color);
-  white-space: nowrap;
 }
 
 .room-actions {
@@ -526,7 +494,6 @@ html, body {
   border-radius: var(--radius-md);
   cursor: pointer;
   transition: all 0.2s;
-  gap: 10px;
 }
 
 .option-item:hover {
@@ -539,22 +506,19 @@ html, body {
 }
 
 .option-item input[type="checkbox"] {
-  margin-right: 0;
+  margin-right: 10px;
   width: 18px;
   height: 18px;
   cursor: pointer;
-  flex-shrink: 0;
 }
 
 .option-info {
   flex: 1;
-  min-width: 0;
 }
 
 .option-name {
   font-weight: 500;
   font-size: 0.9rem;
-  display: block;
 }
 
 .option-price {
@@ -565,60 +529,31 @@ html, body {
 .option-cost {
   font-weight: 600;
   color: var(--primary-color);
-  white-space: nowrap;
 }
 
-/* Category subtotals */
-.category-subtotal {
-  text-align: right;
+/* Color Pickers */
+.color-pickers {
+  display: flex;
+  gap: 16px;
+}
+
+.color-picker-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.color-picker-group label {
   font-size: 0.85rem;
-  font-weight: 600;
-  color: var(--text-color);
-  padding: 6px 0;
-  min-height: 1.5em;
 }
 
-/* Quantity input stepper */
-.quantity-input {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  flex-shrink: 0;
-}
-
-.qty-btn {
-  width: 28px;
-  height: 28px;
-  border: 1px solid var(--border-color);
-  background: white;
-  border-radius: var(--radius-sm);
-  font-size: 1rem;
-  font-weight: bold;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: background 0.15s;
-}
-
-.qty-btn:hover {
-  background: var(--bg-color);
-}
-
-.qty-value {
+.color-picker-group input[type="color"] {
   width: 40px;
-  height: 28px;
-  text-align: center;
+  height: 30px;
+  padding: 0;
   border: 1px solid var(--border-color);
   border-radius: var(--radius-sm);
-  font-size: 0.85rem;
-  -moz-appearance: textfield;
-}
-
-.qty-value::-webkit-outer-spin-button,
-.qty-value::-webkit-inner-spin-button {
-  -webkit-appearance: none;
-  margin: 0;
+  cursor: pointer;
 }
 
 /* ============================================
@@ -900,12 +835,6 @@ html, body {
   border-radius: var(--radius-sm);
 }
 
-.pricing-table select {
-  padding: 6px 10px;
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-sm);
-}
-
 .pricing-table .category-row {
   background: var(--bg-color);
   font-weight: 600;
@@ -983,9 +912,6 @@ html, body {
   border-bottom: 1px solid var(--border-color);
   background: var(--bg-color);
   border-radius: var(--radius-lg) var(--radius-lg) 0 0;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
 }
 
 .room-detail-body {
@@ -1001,13 +927,6 @@ html, body {
 
 .detail-row:last-child {
   border-bottom: none;
-}
-
-/* Project view floor plan */
-.project-floorplan {
-  height: 400px;
-  background: #fafbfc;
-  border-radius: var(--radius-md);
 }
 
 /* ============================================
@@ -1026,43 +945,4 @@ html, body {
   .room-item {
     min-height: 56px;
   }
-}
-
-/* ============================================
-   2D/3D View Toggle
-   ============================================ */
-.view-toggle {
-  display: inline-flex;
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-md);
-  overflow: hidden;
-  margin-right: 8px;
-}
-
-.view-toggle-btn {
-  padding: 4px 14px;
-  font-size: 0.8rem;
-  font-weight: 600;
-  border: none;
-  background: transparent;
-  color: var(--text-muted);
-  cursor: pointer;
-  transition: all 0.2s ease;
-  line-height: 1.4;
-}
-
-.view-toggle-btn:hover {
-  background: var(--bg-color);
-}
-
-.view-toggle-btn.active {
-  background: var(--primary-color);
-  color: white;
-}
-
-/* Three.js canvas inside floorplan viewer */
-.floorplan-viewer canvas {
-  display: block;
-  width: 100% !important;
-  height: 100% !important;
 }

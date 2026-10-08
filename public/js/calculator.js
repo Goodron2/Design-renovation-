@@ -1,13 +1,12 @@
 /**
  * Renovation Cost Calculator
  * Handles pricing options and cost calculations
- * Supports area-based and quantity-based pricing
  */
 
 class RenovationCalculator {
   constructor() {
     this.pricingOptions = [];
-    this.selectedOptions = {}; // roomIndex -> { optionKey: boolean|number }
+    this.selectedOptions = {}; // roomIndex -> { optionKey: boolean }
     this.rooms = [];
     this.onUpdateCallback = null;
   }
@@ -31,26 +30,35 @@ class RenovationCalculator {
     }
   }
 
+  /**
+   * Set callback for when calculations update
+   */
   onUpdate(callback) {
     this.onUpdateCallback = callback;
   }
 
+  /**
+   * Set rooms data
+   */
   setRooms(rooms) {
-    this.rooms = rooms.map(r => RoomShapes.normalizeRoom(r));
-    this.rooms.forEach((room, index) => {
+    this.rooms = rooms;
+    // Initialize selectedOptions for new rooms
+    rooms.forEach((room, index) => {
       if (!this.selectedOptions[index]) {
         this.selectedOptions[index] = {};
       }
     });
   }
 
+  /**
+   * Get pricing options by category
+   */
   getOptionsByCategory(category) {
     return this.pricingOptions.filter(opt => opt.category === category);
   }
 
   /**
    * Toggle option selection for a room
-   * For quantity-based items, pass the quantity as the value
    */
   toggleOption(roomIndex, optionKey, selected) {
     if (!this.selectedOptions[roomIndex]) {
@@ -64,68 +72,24 @@ class RenovationCalculator {
   }
 
   /**
-   * Set quantity for a quantity-based option
+   * Check if option is selected for a room
    */
-  setQuantity(roomIndex, optionKey, quantity) {
-    if (!this.selectedOptions[roomIndex]) {
-      this.selectedOptions[roomIndex] = {};
-    }
-    // Store as number for quantity-based items
-    this.selectedOptions[roomIndex][optionKey] = quantity > 0 ? quantity : false;
-
-    // Update room quantities
-    if (this.rooms[roomIndex]) {
-      if (!this.rooms[roomIndex].quantities) {
-        this.rooms[roomIndex].quantities = {};
-      }
-      this.rooms[roomIndex].quantities[optionKey] = quantity;
-    }
-
-    if (this.onUpdateCallback) {
-      this.onUpdateCallback(this.calculateTotal());
-    }
-  }
-
   isOptionSelected(roomIndex, optionKey) {
-    const val = this.selectedOptions[roomIndex]?.[optionKey];
-    if (typeof val === 'number') return val > 0;
-    return val || false;
+    return this.selectedOptions[roomIndex]?.[optionKey] || false;
   }
 
-  getOptionQuantity(roomIndex, optionKey) {
-    const val = this.selectedOptions[roomIndex]?.[optionKey];
-    if (typeof val === 'number') return val;
-    return 0;
-  }
-
+  /**
+   * Get all selected options
+   */
   getSelectedOptions() {
     return this.selectedOptions;
   }
 
+  /**
+   * Set selected options (for loading saved projects)
+   */
   setSelectedOptions(options) {
     this.selectedOptions = options;
-  }
-
-  /**
-   * Determine if an option uses quantity-based pricing
-   */
-  isQuantityBased(option) {
-    return option.pricing_type === 'quantity' ||
-      option.category === 'electrical' ||
-      option.category === 'plumbing';
-  }
-
-  /**
-   * Get default quantity for a quantity-based option
-   */
-  getDefaultQuantity(roomIndex, optionKey) {
-    const room = this.rooms[roomIndex];
-    if (!room) return 1;
-    const floorArea = RoomShapes.calculateRoomArea(room);
-
-    if (optionKey === 'outlets') return Math.ceil(floorArea / 4);
-    if (optionKey === 'lighting') return Math.ceil(floorArea / 5);
-    return 1;
   }
 
   /**
@@ -138,17 +102,12 @@ class RenovationCalculator {
     const option = this.pricingOptions.find(opt => opt.name_key === optionKey);
     if (!option) return 0;
 
-    if (this.isQuantityBased(option)) {
-      const qty = this.getOptionQuantity(roomIndex, optionKey);
-      return Math.round(qty * option.price_per_sqm);
-    }
-
-    // Area-based calculation using shape functions
-    const floorArea = RoomShapes.calculateRoomArea(room);
-    const wallArea = RoomShapes.calculateWallArea(room);
+    // Calculate area based on option category
+    let area = 0;
+    const floorArea = room.width * room.length;
+    const wallArea = 2 * room.height * (room.width + room.length);
     const ceilingArea = floorArea;
 
-    let area = floorArea;
     switch (option.category) {
       case 'walls':
         area = wallArea;
@@ -158,6 +117,11 @@ class RenovationCalculator {
         break;
       case 'ceiling':
         area = ceilingArea;
+        break;
+      case 'electrical':
+      case 'plumbing':
+        // For electrical and plumbing, use a base count (e.g., per room)
+        area = 1;
         break;
       default:
         area = floorArea;
@@ -173,8 +137,8 @@ class RenovationCalculator {
     const roomOptions = this.selectedOptions[roomIndex] || {};
     let total = 0;
 
-    Object.entries(roomOptions).forEach(([optionKey, value]) => {
-      if (value === true || (typeof value === 'number' && value > 0)) {
+    Object.entries(roomOptions).forEach(([optionKey, selected]) => {
+      if (selected) {
         total += this.calculateOptionCost(roomIndex, optionKey);
       }
     });
@@ -183,37 +147,28 @@ class RenovationCalculator {
   }
 
   /**
-   * Get per-category subtotals for a room
+   * Calculate total cost for all rooms
    */
-  getCategorySubtotals(roomIndex) {
-    const roomOptions = this.selectedOptions[roomIndex] || {};
-    const subtotals = {};
-
-    Object.entries(roomOptions).forEach(([optionKey, value]) => {
-      if (value === true || (typeof value === 'number' && value > 0)) {
-        const option = this.pricingOptions.find(opt => opt.name_key === optionKey);
-        if (option) {
-          const cost = this.calculateOptionCost(roomIndex, optionKey);
-          subtotals[option.category] = (subtotals[option.category] || 0) + cost;
-        }
-      }
-    });
-
-    return subtotals;
-  }
-
   calculateTotal() {
     let total = 0;
+
     this.rooms.forEach((room, index) => {
       total += this.calculateRoomCost(index);
     });
+
     return total;
   }
 
+  /**
+   * Calculate total floor area
+   */
   calculateTotalArea() {
-    return this.rooms.reduce((sum, room) => sum + RoomShapes.calculateRoomArea(room), 0);
+    return this.rooms.reduce((sum, room) => sum + (room.width * room.length), 0);
   }
 
+  /**
+   * Get detailed breakdown for a room
+   */
   getRoomBreakdown(roomIndex) {
     const room = this.rooms[roomIndex];
     if (!room) return [];
@@ -221,8 +176,8 @@ class RenovationCalculator {
     const roomOptions = this.selectedOptions[roomIndex] || {};
     const breakdown = [];
 
-    Object.entries(roomOptions).forEach(([optionKey, value]) => {
-      if (value === true || (typeof value === 'number' && value > 0)) {
+    Object.entries(roomOptions).forEach(([optionKey, selected]) => {
+      if (selected) {
         const option = this.pricingOptions.find(opt => opt.name_key === optionKey);
         if (option) {
           const cost = this.calculateOptionCost(roomIndex, optionKey);
@@ -231,9 +186,7 @@ class RenovationCalculator {
             category: option.category,
             pricePerUnit: option.price_per_sqm,
             unit: option.unit,
-            cost: cost,
-            isQuantity: this.isQuantityBased(option),
-            quantity: typeof value === 'number' ? value : null
+            cost: cost
           });
         }
       }
@@ -244,9 +197,11 @@ class RenovationCalculator {
 
   /**
    * Render options for a room in the UI
-   * Quantity-based items get stepper inputs instead of simple checkboxes
    */
   renderOptions(roomIndex, containers) {
+    // Escape admin-editable strings before inserting them as HTML.
+    const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, c =>
+      ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
     const categories = {
       walls: containers.wallOptions,
       floors: containers.floorOptions,
@@ -255,112 +210,134 @@ class RenovationCalculator {
       plumbing: containers.plumbingOptions
     };
 
+    // Clear containers
     Object.values(categories).forEach(container => {
       if (container) container.innerHTML = '';
     });
 
+    // Group options by category
     const grouped = {};
     this.pricingOptions.forEach(option => {
-      if (!grouped[option.category]) grouped[option.category] = [];
+      if (!grouped[option.category]) {
+        grouped[option.category] = [];
+      }
       grouped[option.category].push(option);
     });
 
-    const self = this;
-
+    // Render each category
     Object.entries(grouped).forEach(([category, options]) => {
       const container = categories[category];
       if (!container) return;
 
       options.forEach(option => {
-        const isQty = self.isQuantityBased(option);
-        const isSelected = self.isOptionSelected(roomIndex, option.name_key);
-        const qty = isQty ? self.getOptionQuantity(roomIndex, option.name_key) : 0;
-        const cost = self.calculateOptionCost(roomIndex, option.name_key);
+        const isSelected = this.isOptionSelected(roomIndex, option.name_key);
+        const cost = this.calculateOptionCost(roomIndex, option.name_key);
 
         const optionEl = document.createElement('div');
-        optionEl.className = 'option-item' + (isSelected ? ' selected' : '');
+        optionEl.className = `option-item ${isSelected ? 'selected' : ''}`;
+        optionEl.innerHTML = `
+          <input type="checkbox"
+                 id="opt_${esc(option.name_key)}"
+                 ${isSelected ? 'checked' : ''}>
+          <div class="option-info">
+            <span class="option-name">${esc(option.name_ru)}</span>
+            <span class="option-price">${Number(option.price_per_sqm)} ₽/${esc(option.unit)}</span>
+          </div>
+          <span class="option-cost">${cost.toLocaleString('ru-RU')} ₽</span>
+        `;
 
-        if (isQty) {
-          // Quantity-based item with stepper
-          optionEl.innerHTML =
-            '<div class="option-info">' +
-              '<span class="option-name">' + option.name_ru + '</span>' +
-              '<span class="option-price">' + option.price_per_sqm + ' \u20BD/' + option.unit + '</span>' +
-            '</div>' +
-            '<div class="quantity-input">' +
-              '<button class="qty-btn qty-minus">-</button>' +
-              '<input type="number" class="qty-value" value="' + qty + '" min="0" max="100">' +
-              '<button class="qty-btn qty-plus">+</button>' +
-            '</div>' +
-            '<span class="option-cost">' + cost.toLocaleString('ru-RU') + ' \u20BD</span>';
+        // Handle click on the entire option row (checkbox or label area)
+        optionEl.addEventListener('click', (e) => {
+          const checkbox = optionEl.querySelector('input[type="checkbox"]');
+          // If the click was not on the checkbox itself, flip it manually.
+          // (Never assign to e.target: Event.target is read-only and throws in
+          // strict mode, which previously froze the whole calculator.)
+          if (e.target !== checkbox) {
+            checkbox.checked = !checkbox.checked;
+          }
 
-          const qtyInput = optionEl.querySelector('.qty-value');
-          const minusBtn = optionEl.querySelector('.qty-minus');
-          const plusBtn = optionEl.querySelector('.qty-plus');
+          this.toggleOption(roomIndex, option.name_key, checkbox.checked);
+          optionEl.classList.toggle('selected', checkbox.checked);
 
-          const updateQty = (newQty) => {
-            newQty = Math.max(0, Math.min(100, newQty));
-            qtyInput.value = newQty;
-            self.setQuantity(roomIndex, option.name_key, newQty);
-            optionEl.classList.toggle('selected', newQty > 0);
-            const newCost = self.calculateOptionCost(roomIndex, option.name_key);
-            optionEl.querySelector('.option-cost').textContent = newCost.toLocaleString('ru-RU') + ' \u20BD';
-          };
-
-          minusBtn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            updateQty(parseInt(qtyInput.value) - 1);
-          });
-
-          plusBtn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            if (parseInt(qtyInput.value) === 0) {
-              // First click: set default quantity
-              updateQty(self.getDefaultQuantity(roomIndex, option.name_key));
-            } else {
-              updateQty(parseInt(qtyInput.value) + 1);
-            }
-          });
-
-          qtyInput.addEventListener('change', () => {
-            updateQty(parseInt(qtyInput.value) || 0);
-          });
-
-          qtyInput.addEventListener('click', (e) => e.stopPropagation());
-
-        } else {
-          // Area-based item with checkbox
-          optionEl.innerHTML =
-            '<input type="checkbox" id="opt_' + option.name_key + '" ' + (isSelected ? 'checked' : '') + '>' +
-            '<div class="option-info">' +
-              '<span class="option-name">' + option.name_ru + '</span>' +
-              '<span class="option-price">' + option.price_per_sqm + ' \u20BD/' + option.unit + '</span>' +
-            '</div>' +
-            '<span class="option-cost">' + cost.toLocaleString('ru-RU') + ' \u20BD</span>';
-
-          optionEl.addEventListener('click', (e) => {
-            if (e.target.type !== 'checkbox') {
-              const checkbox = optionEl.querySelector('input[type="checkbox"]');
-              checkbox.checked = !checkbox.checked;
-            }
-            const checkbox = optionEl.querySelector('input[type="checkbox"]');
-            self.toggleOption(roomIndex, option.name_key, checkbox.checked);
-            optionEl.classList.toggle('selected', checkbox.checked);
-            const newCost = self.calculateOptionCost(roomIndex, option.name_key);
-            optionEl.querySelector('.option-cost').textContent = newCost.toLocaleString('ru-RU') + ' \u20BD';
-
-            // Update floor plan material color
-            if (option.category === 'floors' && checkbox.checked && window.floorPlan) {
-              window.floorPlan.updateRoomMaterial(roomIndex, option.name_key);
-            }
-          });
-        }
+          // Update displayed cost
+          const costSpan = optionEl.querySelector('.option-cost');
+          const newCost = this.calculateOptionCost(roomIndex, option.name_key);
+          costSpan.textContent = `${newCost.toLocaleString('ru-RU')} ₽`;
+        });
 
         container.appendChild(optionEl);
       });
     });
   }
 
+  /**
+   * Resolve a room's selected options into a visual "finish profile" that the
+   * 3D viewer can render. Robust to extra/renamed options: matches on the
+   * option key and the Russian name within each category.
+   */
+  getRoomFinishes(roomIndex) {
+    const sel = this.selectedOptions[roomIndex] || {};
+    const selected = this.pricingOptions.filter(o => sel[o.name_key]);
+    const text = (o) => (o.name_key + ' ' + (o.name_ru || '')).toLowerCase();
+
+    // First value whose regex matches any selected option in `category`.
+    const pick = (category, rules) => {
+      for (const [value, re] of rules) {
+        if (selected.some(o => o.category === category && re.test(text(o)))) return value;
+      }
+      return null;
+    };
+    const hasKey = (k) => selected.some(o => o.name_key === k);
+    const hasText = (re) => selected.some(o => re.test(text(o)));
+
+    const floor = pick('floors', [
+      ['tile', /tile|плитк|керамогранит|porcelain/],
+      ['wood', /laminate|parquet|ламинат|паркет/],
+      ['linoleum', /linoleum|линолеум/],
+      ['smooth', /self_leveling|наливн/]
+    ]);
+    const wall = pick('walls', [
+      ['tile', /wall_tiles|керамическ|плитк/],
+      ['plaster', /plaster|штукатурк/],
+      ['wallpaper', /wallpaper|обои/],
+      ['panels', /panel|панел|пвх/],
+      ['paint', /paint|покраск/]
+    ]);
+    const ceiling = pick('ceiling', [
+      ['multilevel', /multilevel|многоуровн/],
+      ['stretch', /stretch|натяжн/],
+      ['drywall', /drywall|гипсокартон/],
+      ['paint', /paint|покраск|leveling|выравн/]
+    ]);
+
+    return {
+      floor,
+      wall,
+      ceiling,
+      molding: hasText(/molding|карниз/),
+      lighting: hasText(/light|освещ/),
+      outlets: hasText(/outlet|розетк|switch|выключ/),
+      plumbing: {
+        bathtub: hasKey('bathtub_install') || hasText(/ванн/),
+        shower: hasText(/shower|душев/),
+        toilet: hasText(/toilet|унитаз/) || hasKey('plumbing_fixtures'),
+        sink: hasText(/sink|раковин|faucet|смесител/) || hasKey('plumbing_fixtures'),
+        washer: hasText(/washer_connect|стиральн/)
+      }
+    };
+  }
+
+  /**
+   * Names of the works selected for a room (for the AI chat context).
+   */
+  getSelectedOptionNames(roomIndex) {
+    const sel = this.selectedOptions[roomIndex] || {};
+    return this.pricingOptions.filter(o => sel[o.name_key]).map(o => o.name_ru);
+  }
+
+  /**
+   * Get summary data for export
+   */
   getSummaryData() {
     const summary = {
       rooms: [],
@@ -372,8 +349,8 @@ class RenovationCalculator {
       summary.rooms.push({
         ...room,
         index: index,
-        floorArea: RoomShapes.calculateRoomArea(room),
-        wallArea: RoomShapes.calculateWallArea(room),
+        floorArea: room.width * room.length,
+        wallArea: 2 * room.height * (room.width + room.length),
         breakdown: this.getRoomBreakdown(index),
         roomCost: this.calculateRoomCost(index)
       });
@@ -383,4 +360,5 @@ class RenovationCalculator {
   }
 }
 
+// Export for use in other scripts
 window.RenovationCalculator = RenovationCalculator;

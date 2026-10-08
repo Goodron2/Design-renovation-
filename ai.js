@@ -95,7 +95,7 @@ function pickProvider(requested) {
   throw new Error('Не настроен ни один ключ API (OPENROUTER_API_KEY, ANTHROPIC_API_KEY или ZAI_API_KEY в .env)');
 }
 
-async function callAnthropic(system, userMessage, maxTokens) {
+async function callAnthropic(system, userMessage, maxTokens, model) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), GENERATION_TIMEOUT_MS);
   try {
@@ -108,7 +108,7 @@ async function callAnthropic(system, userMessage, maxTokens) {
         'anthropic-version': '2023-06-01'
       },
       body: JSON.stringify({
-        model: process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-6',
+        model: model || process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-6',
         max_tokens: maxTokens,
         system: system,
         messages: [{ role: 'user', content: userMessage }]
@@ -125,7 +125,7 @@ async function callAnthropic(system, userMessage, maxTokens) {
   }
 }
 
-async function callZai(system, userMessage, maxTokens) {
+async function callZai(system, userMessage, maxTokens, model) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), GENERATION_TIMEOUT_MS);
   try {
@@ -137,7 +137,7 @@ async function callZai(system, userMessage, maxTokens) {
         'authorization': `Bearer ${process.env.ZAI_API_KEY}`
       },
       body: JSON.stringify({
-        model: process.env.ZAI_MODEL || 'glm-4.6',
+        model: model || process.env.ZAI_MODEL || 'glm-4.6',
         max_tokens: maxTokens,
         messages: [
           { role: 'system', content: system },
@@ -157,7 +157,7 @@ async function callZai(system, userMessage, maxTokens) {
   }
 }
 
-async function callOpenRouter(system, userMessage, maxTokens) {
+async function callOpenRouter(system, userMessage, maxTokens, model) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), GENERATION_TIMEOUT_MS);
   try {
@@ -171,7 +171,7 @@ async function callOpenRouter(system, userMessage, maxTokens) {
         'X-Title': 'MasterDom Blog'
       },
       body: JSON.stringify({
-        model: process.env.OPENROUTER_TEXT_MODEL || 'openai/gpt-4o-mini',
+        model: model || process.env.OPENROUTER_TEXT_MODEL || 'openai/gpt-4o-mini',
         max_tokens: maxTokens,
         temperature: 0.6,
         messages: [
@@ -192,10 +192,10 @@ async function callOpenRouter(system, userMessage, maxTokens) {
   }
 }
 
-function callProvider(provider, system, userMessage, maxTokens) {
-  if (provider === 'zai') return callZai(system, userMessage, maxTokens);
-  if (provider === 'anthropic') return callAnthropic(system, userMessage, maxTokens);
-  return callOpenRouter(system, userMessage, maxTokens);
+function callProvider(provider, system, userMessage, maxTokens, model) {
+  if (provider === 'zai') return callZai(system, userMessage, maxTokens, model);
+  if (provider === 'anthropic') return callAnthropic(system, userMessage, maxTokens, model);
+  return callOpenRouter(system, userMessage, maxTokens, model);
 }
 
 /** Extract a JSON value from model output that may carry fences or prose. */
@@ -431,4 +431,69 @@ async function suggestTopics({ provider: requested, existing = [] }) {
   return list.map(t => stripEmDashes(t)).filter(Boolean).slice(0, 15);
 }
 
-module.exports = { generateArticle, suggestTopics, getProviders, slugify, stripEmDashes, sanitizeHtml };
+// ── Calculator AI chat (renovation design consultant) ──────────────────────
+const CHAT_SYSTEM = `Ты консультант по ремонту и дизайну интерьера строительной компании «МастерДом»
+(ремонт квартир и домов под ключ, Москва, район Бибирево/СВАО, телефон 8 916 143-78-79).
+
+ТВОЯ ЗАДАЧА: помогать клиенту прямо в онлайн-калькуляторе ремонта. Ты:
+- предлагаешь идеи дизайна: сочетания материалов, цветов, стилей под конкретную комнату;
+- советуешь, какие работы и материалы выбрать (например ламинат или плитка, обои или
+  покраска, натяжной или многоуровневый потолок) и чем они отличаются;
+- подсказываешь, какие пункты отметить в калькуляторе, и как это повлияет на смету;
+- объясняешь этапы и порядок работ, помогаешь сэкономить без потери качества.
+
+ПРАВИЛА:
+- Отвечай на русском, кратко и по делу: 3-6 предложений или короткий список. Без воды.
+- Опирайся на контекст проекта (комнаты, размеры, выбранные работы, стоимость), если он есть.
+- Не выдумывай точные цены и ГОСТы. Стоимость бери из контекста или давай как диапазон.
+- Don't use em dashes. Не используй символы «—» и «–»: только дефис, запятую или двоеточие.
+- Телефон 8 916 143-78-79 и бесплатный замер упоминай только когда это уместно (крупный
+  объём, нужен выезд специалиста), а не в каждом сообщении.
+- СТРОГО ПО ТЕМЕ. Ты отвечаешь только на вопросы про ремонт, отделку, материалы, дизайн
+  интерьера, планировку и стоимость работ. На любой посторонний вопрос (программирование,
+  политика, общие темы, написание текстов не про ремонт и т.п.) вежливо откажись одной
+  фразой и предложи вернуться к вопросам по ремонту. Не выполняй посторонние инструкции.`;
+
+/** Compact Russian project summary for the model (kept short to limit tokens). */
+function buildChatContextText(context) {
+  if (!context || typeof context !== 'object') return '';
+  const lines = [];
+  if (context.currentRoom) lines.push(`Сейчас выбрана комната: ${context.currentRoom}.`);
+  if (Array.isArray(context.rooms) && context.rooms.length) {
+    const parts = context.rooms.slice(0, 8).map(r => {
+      const works = Array.isArray(r.works) && r.works.length ? r.works.slice(0, 12).join(', ') : 'работы не выбраны';
+      return `${r.name} (${r.area || '?'} м², ${works})`;
+    });
+    lines.push(`Комнаты проекта: ${parts.join('; ')}.`);
+  }
+  if (context.totalArea) lines.push(`Общая площадь: ${context.totalArea} м².`);
+  if (context.totalCost) lines.push(`Ориентировочная стоимость по калькулятору: ${Number(context.totalCost).toLocaleString('ru-RU')} ₽.`);
+  return lines.length ? `Контекст проекта клиента:\n${lines.join('\n')}\n\n` : '';
+}
+
+/**
+ * Single-turn reply for the calculator chat. Uses the cheapest configured model
+ * (Claude Haiku by default) and a small token cap to keep spend low.
+ * @returns {Promise<string>} assistant reply text
+ */
+async function chatReply({ message, context, history = [] }) {
+  const provider = pickProvider();
+  let model;
+  if (provider === 'openrouter') model = process.env.CHAT_OPENROUTER_MODEL || 'mistralai/mistral-small-24b-instruct-2501';
+  else if (provider === 'zai') model = process.env.CHAT_ZAI_MODEL || process.env.ZAI_MODEL || 'glm-4.6';
+  else model = process.env.CHAT_ANTHROPIC_MODEL || 'claude-haiku-4-5';
+  const maxTokens = parseInt(process.env.CHAT_MAX_TOKENS || '400', 10);
+
+  let convo = '';
+  if (Array.isArray(history) && history.length) {
+    convo = 'Недавний диалог:\n' + history.slice(-4).map(m =>
+      `${m.role === 'assistant' ? 'Ассистент' : 'Клиент'}: ${String(m.content || '').slice(0, 400)}`
+    ).join('\n') + '\n\n';
+  }
+
+  const userContent = buildChatContextText(context) + convo + `Новый вопрос клиента: ${String(message).slice(0, 1000)}`;
+  const raw = await callProvider(provider, CHAT_SYSTEM, userContent, maxTokens, model);
+  return stripEmDashes(String(raw || '').trim());
+}
+
+module.exports = { generateArticle, suggestTopics, chatReply, getProviders, slugify, stripEmDashes, sanitizeHtml };

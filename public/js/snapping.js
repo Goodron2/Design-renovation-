@@ -4,7 +4,7 @@
  * - Room overlap / collision detection
  */
 var RoomSnapping = (function() {
-  var SNAP_THRESHOLD = 0.8; // meters — generous snap for connecting rooms
+  var SNAP_THRESHOLD = 0.5; // meters — snap distance
 
   /**
    * Get world-space edges for a room
@@ -122,13 +122,33 @@ var RoomSnapping = (function() {
   // --- Collision detection ---
 
   /**
-   * Get world-space polygon vertices for a room
+   * Get world-space polygon vertices for a room, optionally inset by margin
    */
-  function getWorldVertices(room) {
+  function getWorldVertices(room, inset) {
     var verts = RoomShapes.getRoomVertices(room);
     var pos = room.position || { x: 0, y: 0 };
-    return verts.map(function(v) {
+    var worldVerts = verts.map(function(v) {
       return { x: v.x + pos.x, y: v.y + pos.y };
+    });
+
+    if (!inset || inset <= 0) return worldVerts;
+
+    // Simple inset: move each vertex toward centroid
+    var cx = 0, cy = 0;
+    for (var i = 0; i < worldVerts.length; i++) {
+      cx += worldVerts[i].x;
+      cy += worldVerts[i].y;
+    }
+    cx /= worldVerts.length;
+    cy /= worldVerts.length;
+
+    return worldVerts.map(function(v) {
+      var dx = v.x - cx;
+      var dy = v.y - cy;
+      var dist = Math.sqrt(dx * dx + dy * dy);
+      if (dist < 0.001) return { x: v.x, y: v.y };
+      var factor = Math.max(0, (dist - inset)) / dist;
+      return { x: cx + dx * factor, y: cy + dy * factor };
     });
   }
 
@@ -157,7 +177,7 @@ var RoomSnapping = (function() {
     if (Math.abs(cross) < 1e-10) return false;
     var t = ((b1.x - a1.x) * d2y - (b1.y - a1.y) * d2x) / cross;
     var u = ((b1.x - a1.x) * d1y - (b1.y - a1.y) * d1x) / cross;
-    return t > 0.001 && t < 0.999 && u > 0.001 && u < 0.999;
+    return t > 0.01 && t < 0.99 && u > 0.01 && u < 0.99;
   }
 
   /**
@@ -165,8 +185,9 @@ var RoomSnapping = (function() {
    * Returns true if they overlap
    */
   function roomsOverlap(roomA, roomB) {
-    var polyA = getWorldVertices(roomA);
-    var polyB = getWorldVertices(roomB);
+    var INSET = 0.05; // 5cm tolerance — allows shared edges without collision
+    var polyA = getWorldVertices(roomA, INSET);
+    var polyB = getWorldVertices(roomB, INSET);
 
     // Edge intersection check
     for (var i = 0; i < polyA.length; i++) {

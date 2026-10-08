@@ -1,7 +1,7 @@
 /**
  * 3D Room Viewer using Three.js
- * Renders rooms with walls, floor, and ceiling from shapes.js vertices
- * Mirrors FloorPlanViewer public API for seamless 2D/3D toggling
+ * Renders rooms with walls and floor (no ceiling for top-down visibility)
+ * Uses MeshBasicMaterial — no lighting dependency
  */
 class Viewer3D {
   constructor(containerId, options) {
@@ -10,13 +10,11 @@ class Viewer3D {
     this.options = options || {};
     this.readOnly = this.options.readOnly || false;
 
-    // State
     this.rooms = [];
     this.selectedIndex = -1;
     this.onRoomSelect = null;
     this._initialized = false;
 
-    // Three.js objects (created lazily)
     this.scene = null;
     this.camera = null;
     this.renderer = null;
@@ -25,116 +23,88 @@ class Viewer3D {
     this.mouse = null;
     this._animFrameId = null;
 
-    // Room meshes grouped by room index
-    this._roomMeshes = []; // [{floor, ceiling, walls[], wireframe, furniture[]}]
-    this._floorMeshes = []; // flat list of floor meshes for raycasting
+    this._roomMeshes = [];
+    this._floorMeshes = [];
 
-    // Material color map (matches FloorPlanViewer)
+    // Floor colors by material
     this.materialColors = {
       laminate: 0xC4A46C,
-      floor_tile: 0xA0A0A0,
+      floor_tile: 0xB0B0B0,
       linoleum: 0x7CB68E,
-      default: 0xE8E0D0
+      default: 0xDED4C1
     };
 
-    // Texture path map
+    // Texture paths
     this._textureMap = {
       laminate: "/textures/laminate.jpg",
       floor_tile: "/textures/floor_tile.jpg",
       linoleum: "/textures/linoleum.jpg"
     };
     this._wallTexturePath = "/textures/wall_paint.jpg";
-    this._ceilingTexturePath = "/textures/ceiling_white.jpg";
-
-    // Texture cache
     this._textureCache = {};
     this._textureLoader = null;
 
-    // Wall/ceiling colors
-    this._wallColor = 0xf5f0eb;
-    this._ceilingColor = 0xfafafa;
+    this._wallColor = 0xF0EBE3;
     this._selectedWireColor = 0x2563eb;
   }
 
-  /**
-   * Lazy initialization of Three.js scene
-   */
   _initScene() {
     if (this._initialized) return;
     this._initialized = true;
 
     this._textureLoader = new THREE.TextureLoader();
 
-    var w = this.container.clientWidth;
+    var w = this.container.clientWidth || 600;
     var h = this.container.clientHeight || 400;
 
-    // Scene
     this.scene = new THREE.Scene();
-    this.scene.background = new THREE.Color(0xfafbfc);
+    this.scene.background = new THREE.Color(0xf0f2f5);
 
-    // Camera
-    this.camera = new THREE.PerspectiveCamera(45, w / h, 0.1, 1000);
-    this.camera.position.set(10, 12, 10);
+    this.camera = new THREE.PerspectiveCamera(50, w / h, 0.1, 500);
+    this.camera.position.set(8, 10, 8);
     this.camera.lookAt(0, 0, 0);
 
-    // Renderer
     this.renderer = new THREE.WebGLRenderer({ antialias: true });
     this.renderer.setSize(w, h);
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-    this.renderer.shadowMap.enabled = true;
-    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
-    // OrbitControls
     this.controls = new THREE.OrbitControls(this.camera, this.renderer.domElement);
     this.controls.enableDamping = true;
     this.controls.dampingFactor = 0.08;
-    this.controls.maxPolarAngle = Math.PI / 2;
+    this.controls.maxPolarAngle = Math.PI * 0.48;
     this.controls.minDistance = 2;
-    this.controls.maxDistance = 100;
+    this.controls.maxDistance = 80;
 
-    // Lights
-    var ambient = new THREE.AmbientLight(0xffffff, 0.6);
-    this.scene.add(ambient);
-
-    var dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
-    dirLight.position.set(10, 20, 10);
-    dirLight.castShadow = true;
-    dirLight.shadow.mapSize.width = 1024;
-    dirLight.shadow.mapSize.height = 1024;
-    this.scene.add(dirLight);
-
-    // Ground plane (subtle grid reference)
-    var gridHelper = new THREE.GridHelper(50, 50, 0xe0e0e0, 0xf0f0f0);
+    // Grid
+    var gridHelper = new THREE.GridHelper(40, 40, 0xd0d0d0, 0xe8e8e8);
     gridHelper.position.y = -0.01;
     this.scene.add(gridHelper);
 
-    // Raycaster for click selection
     this.raycaster = new THREE.Raycaster();
     this.mouse = new THREE.Vector2();
 
-    // Click handler
     this.renderer.domElement.addEventListener("click", (e) => this._onClick(e));
 
-    // Resize handler
     this._resizeHandler = () => this._onResize();
     window.addEventListener("resize", this._resizeHandler);
   }
 
-  /**
-   * Load or get cached texture
-   */
   _getTexture(path) {
     if (this._textureCache[path]) return this._textureCache[path];
-    var tex = this._textureLoader.load(path, undefined, undefined, function() {});
+    var self = this;
+    var tex = this._textureLoader.load(path, function() {
+      // Re-render when texture loads
+      if (self.renderer && self.scene && self.camera) {
+        self.renderer.render(self.scene, self.camera);
+      }
+    });
     tex.wrapS = THREE.RepeatWrapping;
     tex.wrapT = THREE.RepeatWrapping;
+    tex.colorSpace = THREE.SRGBColorSpace || THREE.sRGBEncoding;
     this._textureCache[path] = tex;
     return tex;
   }
 
-  /**
-   * Show the 3D viewer
-   */
   show() {
     this._initScene();
 
@@ -146,15 +116,13 @@ class Viewer3D {
     this._onResize();
     this._startRenderLoop();
 
+    // Always rebuild when show is called
     if (this.rooms.length > 0) {
       this._buildAllRooms();
       this.fitToView();
     }
   }
 
-  /**
-   * Hide the 3D viewer
-   */
   hide() {
     this._stopRenderLoop();
     if (this.renderer && this.renderer.domElement.parentNode) {
@@ -162,9 +130,6 @@ class Viewer3D {
     }
   }
 
-  /**
-   * Set rooms data and rebuild 3D meshes
-   */
   setRooms(rooms) {
     this.rooms = rooms.map(function(r) { return RoomShapes.normalizeRoom(r); });
     this._autoPositionRooms();
@@ -200,7 +165,6 @@ class Viewer3D {
     for (var i = 0; i < this._roomMeshes.length; i++) {
       var rm = this._roomMeshes[i];
       if (rm.floor) this.scene.remove(rm.floor);
-      if (rm.ceiling) this.scene.remove(rm.ceiling);
       if (rm.wireframe) this.scene.remove(rm.wireframe);
       if (rm.furniture) {
         for (var f = 0; f < rm.furniture.length; f++) {
@@ -216,20 +180,17 @@ class Viewer3D {
   }
 
   /**
-   * Build a flat polygon geometry on the XZ plane from 2D vertices.
-   * Uses ShapeUtils.triangulateShape for proper triangulation.
-   * Adds UV coords: u = worldX / 2, v = worldZ / 2 (2m tile repeat).
+   * Build floor geometry on XZ plane using triangulation
    */
-  _buildFlatGeometry(worldVerts2D) {
+  _buildFloorGeometry(worldVerts) {
     var positions = [];
     var normals = [];
     var uvs = [];
 
-    // Use THREE.Shape + ShapeUtils to triangulate
     var shape = new THREE.Shape();
-    shape.moveTo(worldVerts2D[0].x, worldVerts2D[0].z);
-    for (var i = 1; i < worldVerts2D.length; i++) {
-      shape.lineTo(worldVerts2D[i].x, worldVerts2D[i].z);
+    shape.moveTo(worldVerts[0].x, worldVerts[0].z);
+    for (var i = 1; i < worldVerts.length; i++) {
+      shape.lineTo(worldVerts[i].x, worldVerts[i].z);
     }
     shape.closePath();
 
@@ -241,9 +202,9 @@ class Viewer3D {
       for (var k = 0; k < 3; k++) {
         var vi = tri[k];
         var vx = shapePoints[vi].x;
-        var vz = shapePoints[vi].y; // Shape uses x,y; we mapped z->y
+        var vz = shapePoints[vi].y;
         positions.push(vx, 0, vz);
-        normals.push(0, 1, 0); // Explicit UP normal for floor/ceiling
+        normals.push(0, 1, 0);
         uvs.push(vx / 2, vz / 2);
       }
     }
@@ -256,8 +217,7 @@ class Viewer3D {
   }
 
   /**
-   * Build 3D meshes for a single room.
-   * Coordinate mapping: shapes (x->right, y->down) -> Three.js (x->right, y->up, z = -shapesY)
+   * Build 3D room: floor + walls (no ceiling)
    */
   _buildRoom(index) {
     var room = this.rooms[index];
@@ -272,7 +232,7 @@ class Viewer3D {
       floorColorHex = this.materialColors[materialKey];
     }
 
-    // Convert 2D shape vertices to Three.js XZ world coords
+    // Convert 2D shape verts to Three.js XZ world coords
     var worldVerts = [];
     for (var i = 0; i < verts.length; i++) {
       worldVerts.push({
@@ -281,45 +241,29 @@ class Viewer3D {
       });
     }
 
-    // --- Floor (BufferGeometry on XZ plane at y=0) ---
-    var floorGeo = this._buildFlatGeometry(worldVerts);
+    // --- Floor ---
+    var floorGeo = this._buildFloorGeometry(worldVerts);
     var floorMat;
     var texPath = materialKey ? this._textureMap[materialKey] : null;
     if (texPath) {
       var floorTex = this._getTexture(texPath);
-      floorMat = new THREE.MeshStandardMaterial({
+      floorMat = new THREE.MeshBasicMaterial({
         map: floorTex,
-        roughness: 0.8,
-        metalness: 0.1,
         side: THREE.DoubleSide
       });
     } else {
-      floorMat = new THREE.MeshStandardMaterial({
+      floorMat = new THREE.MeshBasicMaterial({
         color: floorColorHex,
-        roughness: 0.8,
-        metalness: 0.1,
         side: THREE.DoubleSide
       });
     }
     var floorMesh = new THREE.Mesh(floorGeo, floorMat);
     floorMesh.position.y = 0;
-    floorMesh.receiveShadow = true;
     floorMesh.userData.roomIndex = index;
     this.scene.add(floorMesh);
 
-    // --- Ceiling (independent BufferGeometry at y=height) ---
-    var ceilingGeo = this._buildFlatGeometry(worldVerts);
-    var ceilingMat = new THREE.MeshStandardMaterial({
-      color: this._ceilingColor,
-      roughness: 0.9,
-      metalness: 0,
-      side: THREE.DoubleSide
-    });
-    var ceilingMesh = new THREE.Mesh(ceilingGeo, ceilingMat);
-    ceilingMesh.position.y = height;
-    this.scene.add(ceilingMesh);
-
-    // --- Walls (per edge) ---
+    // --- Walls (half height for visibility) ---
+    var wallDisplayHeight = height * 0.5;
     var walls = [];
     for (var j = 0; j < verts.length; j++) {
       var v1 = verts[j];
@@ -335,35 +279,51 @@ class Viewer3D {
       var edgeLength = Math.sqrt(dx * dx + dz * dz);
       if (edgeLength < 0.01) continue;
 
-      var wallGeo = new THREE.PlaneGeometry(edgeLength, height);
-      var wallMat = new THREE.MeshStandardMaterial({
+      var wallGeo = new THREE.PlaneGeometry(edgeLength, wallDisplayHeight);
+      var wallMat = new THREE.MeshBasicMaterial({
         color: this._wallColor,
-        roughness: 0.9,
-        metalness: 0,
-        side: THREE.DoubleSide
+        side: THREE.DoubleSide,
+        transparent: true,
+        opacity: 0.9
       });
       var wallMesh = new THREE.Mesh(wallGeo, wallMat);
 
-      // Position at edge midpoint
       wallMesh.position.set(
         (x1 + x2) / 2,
-        height / 2,
+        wallDisplayHeight / 2,
         (z1 + z2) / 2
       );
-
-      // Rotate to align with edge direction (fixed formula)
       wallMesh.rotation.y = Math.atan2(-dz, dx);
 
-      wallMesh.castShadow = true;
-      wallMesh.receiveShadow = true;
       this.scene.add(wallMesh);
       walls.push(wallMesh);
+
+      // Wall top edge line
+      var edgePoints = [
+        new THREE.Vector3(x1, wallDisplayHeight, z1),
+        new THREE.Vector3(x2, wallDisplayHeight, z2)
+      ];
+      var edgeGeo = new THREE.BufferGeometry().setFromPoints(edgePoints);
+      var edgeMat = new THREE.LineBasicMaterial({ color: 0xb0a898 });
+      var edgeLine = new THREE.Line(edgeGeo, edgeMat);
+      this.scene.add(edgeLine);
+      walls.push(edgeLine);
+
+      // Wall bottom edge line
+      var bottomPoints = [
+        new THREE.Vector3(x1, 0.01, z1),
+        new THREE.Vector3(x2, 0.01, z2)
+      ];
+      var bottomGeo = new THREE.BufferGeometry().setFromPoints(bottomPoints);
+      var bottomLine = new THREE.Line(bottomGeo, new THREE.LineBasicMaterial({ color: 0xc0b8a8 }));
+      this.scene.add(bottomLine);
+      walls.push(bottomLine);
     }
 
     // --- Selection wireframe ---
     var wireframe = null;
     if (isSelected) {
-      wireframe = this._createSelectionWireframe(verts, pos, height);
+      wireframe = this._createSelectionWireframe(verts, pos, wallDisplayHeight);
       this.scene.add(wireframe);
     }
 
@@ -382,7 +342,6 @@ class Viewer3D {
 
     this._roomMeshes.push({
       floor: floorMesh,
-      ceiling: ceilingMesh,
       walls: walls,
       wireframe: wireframe,
       furniture: furnitureMeshes
@@ -390,9 +349,6 @@ class Viewer3D {
     this._floorMeshes.push(floorMesh);
   }
 
-  /**
-   * Build a 3D box mesh for a furniture item
-   */
   _buildFurnitureMesh(item, roomPos) {
     if (!item || !item.width || !item.depth) return null;
     var w = item.width;
@@ -400,19 +356,13 @@ class Viewer3D {
     var h = item.height || 0.8;
     var geo = new THREE.BoxGeometry(w, h, d);
     var color = item.color ? new THREE.Color(item.color) : new THREE.Color(0x8B4513);
-    var mat = new THREE.MeshStandardMaterial({
-      color: color,
-      roughness: 0.7,
-      metalness: 0.1
-    });
+    var mat = new THREE.MeshBasicMaterial({ color: color });
     var mesh = new THREE.Mesh(geo, mat);
     var wx = (item.x || 0) + roomPos.x;
     var wz = -((item.y || 0) + roomPos.y);
     var rot = item.rotation || 0;
     mesh.position.set(wx, h / 2, wz);
     mesh.rotation.y = -rot;
-    mesh.castShadow = true;
-    mesh.receiveShadow = true;
     return mesh;
   }
 
@@ -420,7 +370,7 @@ class Viewer3D {
     var group = new THREE.Group();
     var bottomPts = [];
     for (var i = 0; i < verts.length; i++) {
-      bottomPts.push(new THREE.Vector3(verts[i].x + pos.x, 0.01, -(verts[i].y + pos.y)));
+      bottomPts.push(new THREE.Vector3(verts[i].x + pos.x, 0.02, -(verts[i].y + pos.y)));
     }
     bottomPts.push(bottomPts[0].clone());
 
@@ -429,15 +379,15 @@ class Viewer3D {
     group.add(new THREE.Line(bottomGeo, lineMat));
 
     var topPts = bottomPts.map(function(p) {
-      return new THREE.Vector3(p.x, height, p.z);
+      return new THREE.Vector3(p.x, height + 0.02, p.z);
     });
     var topGeo = new THREE.BufferGeometry().setFromPoints(topPts);
     group.add(new THREE.Line(topGeo, lineMat.clone()));
 
     for (var j = 0; j < verts.length; j++) {
       var vertPts = [
-        new THREE.Vector3(verts[j].x + pos.x, 0.01, -(verts[j].y + pos.y)),
-        new THREE.Vector3(verts[j].x + pos.x, height, -(verts[j].y + pos.y))
+        new THREE.Vector3(verts[j].x + pos.x, 0.02, -(verts[j].y + pos.y)),
+        new THREE.Vector3(verts[j].x + pos.x, height + 0.02, -(verts[j].y + pos.y))
       ];
       var vertGeo = new THREE.BufferGeometry().setFromPoints(vertPts);
       group.add(new THREE.Line(vertGeo, lineMat.clone()));
@@ -490,13 +440,11 @@ class Viewer3D {
   fitToView() {
     if (!this.camera || this.rooms.length === 0) return;
     var minX = Infinity, minZ = Infinity, maxX = -Infinity, maxZ = -Infinity;
-    var maxHeight = 0;
 
     for (var i = 0; i < this.rooms.length; i++) {
       var room = this.rooms[i];
       var pos = room.position || { x: 0, y: 0 };
       var bb = RoomShapes.getBoundingBox(room);
-      var h = room.height || 2.7;
       var rx1 = pos.x + bb.minX;
       var rz1 = -(pos.y + bb.maxY);
       var rx2 = pos.x + bb.maxX;
@@ -505,22 +453,21 @@ class Viewer3D {
       if (rz1 < minZ) minZ = rz1;
       if (rx2 > maxX) maxX = rx2;
       if (rz2 > maxZ) maxZ = rz2;
-      if (h > maxHeight) maxHeight = h;
     }
 
     var centerX = (minX + maxX) / 2;
     var centerZ = (minZ + maxZ) / 2;
     var sizeX = maxX - minX;
     var sizeZ = maxZ - minZ;
-    var maxSize = Math.max(sizeX, sizeZ, maxHeight);
-    var distance = Math.max(maxSize * 1.5, 5);
+    var maxSize = Math.max(sizeX, sizeZ, 3);
+    var distance = Math.max(maxSize * 1.8, 6);
 
     this.camera.position.set(
-      centerX + distance * 0.7,
-      distance * 0.8,
-      centerZ + distance * 0.7
+      centerX + distance * 0.6,
+      distance * 0.7,
+      centerZ + distance * 0.6
     );
-    this.controls.target.set(centerX, maxHeight / 2, centerZ);
+    this.controls.target.set(centerX, 0.5, centerZ);
     this.controls.update();
   }
 
@@ -563,7 +510,7 @@ class Viewer3D {
 
   _onResize() {
     if (!this.container || !this.renderer || !this.camera) return;
-    var w = this.container.clientWidth;
+    var w = this.container.clientWidth || 600;
     var h = this.container.clientHeight || 400;
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();

@@ -1,0 +1,50 @@
+<svg width="1200" height="630" viewBox="0 0 1200 630" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1200" y2="630" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#16191f"/>
+      <stop offset="1" stop-color="#1f242d"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(1020 70) rotate(130) scale(560)">
+      <stop stop-color="#f59e0b" stop-opacity="0.22"/>
+      <stop offset="1" stop-color="#f59e0b" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="1200" height="630" fill="url(#bg)"/>
+  <rect width="1200" height="630" fill="url(#glow)"/>
+
+  <!-- logo -->
+  <g transform="translate(90 86)">
+    <path d="M2 28L30 4l28 24" stroke="#f59e0b" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M11 24v26h38V24" stroke="#fff" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M24 50V36h12v14" stroke="#f59e0b" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+    <text x="74" y="44" font-family="Manrope, Arial, sans-serif" font-size="38" font-weight="800" fill="#ffffff">Мастер<tspan fill="#f59e0b">Дом</tspan></text>
+  </g>
+
+  <!-- badge -->
+  <g transform="translate(90 210)">
+    <rect width="430" height="48" rx="24" fill="#f59e0b" fill-opacity="0.12" stroke="#f59e0b" stroke-opacity="0.4"/>
+    <text x="26" y="31" font-family="Manrope, Arial, sans-serif" font-size="21" font-weight="700" fill="#f59e0b">📍 Бибирево · СВАО · Москва</text>
+  </g>
+
+  <!-- headline -->
+  <text x="88" y="350" font-family="Manrope, Arial, sans-serif" font-size="72" font-weight="800" fill="#ffffff">Ремонт квартир и домов</text>
+  <text x="88" y="432" font-family="Manrope, Arial, sans-serif" font-size="72" font-weight="800" fill="#ffffff"><tspan fill="#f59e0b">под ключ</tspan> в Бибирево</text>
+
+  <!-- subline -->
+  <text x="90" y="500" font-family="Manrope, Arial, sans-serif" font-size="28" font-weight="600" fill="#9aa1ab">Договор · фиксированная смета · гарантия 2 года · бесплатный замер</text>
+
+  <!-- phone -->
+  <g transform="translate(90 540)">
+    <rect width="370" height="58" rx="29" fill="#f59e0b"/>
+    <text x="185" y="38" text-anchor="middle" font-family="Manrope, Arial, sans-serif" font-size="28" font-weight="800" fill="#1a1304">📞 8 916 143-78-79</text>
+  </g>
+
+  <!-- house illustration -->
+  <g transform="translate(840 250)" opacity="0.95">
+    <path d="M40 150L170 40l130 110" stroke="#f59e0b" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M75 122v120h190V122" stroke="#e8e6e1" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M145 242v-66h50v66" stroke="#f59e0b" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+    <rect x="100" y="150" width="34" height="34" rx="5" stroke="#9aa1ab" stroke-width="6"/>
+    <rect x="206" y="150" width="34" height="34" rx="5" stroke="#9aa1ab" stroke-width="6"/>
+  </g>
+</svg>
