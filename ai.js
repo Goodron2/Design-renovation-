@@ -17,7 +17,10 @@ const path = require('path');
 
 const ANTHROPIC_URL = 'https://api.anthropic.com/v1/messages';
 const ZAI_URL = 'https://api.z.ai/api/paas/v4/chat/completions';
-const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
+// OpenRouter answers 403 to Russian IPs, so the server sets OPENROUTER_BASE_URL to the goodron relay.
+// Read at call time: server.js loads .env after requiring this module.
+const openrouterUrl = () =>
+  `${(process.env.OPENROUTER_BASE_URL || 'https://openrouter.ai/api/v1').replace(/\/+$/, '')}/chat/completions`;
 
 const GENERATION_TIMEOUT_MS = 8 * 60 * 1000;
 
@@ -157,11 +160,12 @@ async function callZai(system, userMessage, maxTokens, model) {
   }
 }
 
-async function callOpenRouter(system, userMessage, maxTokens, model) {
+// fallbacks: models OpenRouter tries in order when the first one errors (e.g. 429 rate-limited upstream).
+async function callOpenRouter(system, userMessage, maxTokens, model, fallbacks = []) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), GENERATION_TIMEOUT_MS);
   try {
-    const res = await fetch(OPENROUTER_URL, {
+    const res = await fetch(openrouterUrl(), {
       method: 'POST',
       signal: controller.signal,
       headers: {
@@ -172,6 +176,7 @@ async function callOpenRouter(system, userMessage, maxTokens, model) {
       },
       body: JSON.stringify({
         model: model || process.env.OPENROUTER_TEXT_MODEL || 'openai/gpt-4o-mini',
+        ...(fallbacks.length ? { models: [model, ...fallbacks].filter(Boolean) } : {}),
         max_tokens: maxTokens,
         temperature: 0.6,
         messages: [
@@ -192,10 +197,10 @@ async function callOpenRouter(system, userMessage, maxTokens, model) {
   }
 }
 
-function callProvider(provider, system, userMessage, maxTokens, model) {
+function callProvider(provider, system, userMessage, maxTokens, model, fallbacks) {
   if (provider === 'zai') return callZai(system, userMessage, maxTokens, model);
   if (provider === 'anthropic') return callAnthropic(system, userMessage, maxTokens, model);
-  return callOpenRouter(system, userMessage, maxTokens, model);
+  return callOpenRouter(system, userMessage, maxTokens, model, fallbacks);
 }
 
 /** Extract a JSON value from model output that may carry fences or prose. */
@@ -297,7 +302,7 @@ CAPTION: <короткая подпись, до 8 слов>
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), GENERATION_TIMEOUT_MS);
   try {
-    const res = await fetch(OPENROUTER_URL, {
+    const res = await fetch(openrouterUrl(), {
       method: 'POST',
       signal: controller.signal,
       headers: {
@@ -345,7 +350,7 @@ async function makeCover(title, summary) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), GENERATION_TIMEOUT_MS);
   try {
-    const res = await fetch(OPENROUTER_URL, {
+    const res = await fetch(openrouterUrl(), {
       method: 'POST',
       signal: controller.signal,
       headers: {
@@ -492,7 +497,10 @@ async function chatReply({ message, context, history = [] }) {
   }
 
   const userContent = buildChatContextText(context) + convo + `Новый вопрос клиента: ${String(message).slice(0, 1000)}`;
-  const raw = await callProvider(provider, CHAT_SYSTEM, userContent, maxTokens, model);
+  // The cheap default model is often rate-limited upstream; let OpenRouter fall back to another cheap one.
+  const fallbacks = (process.env.CHAT_OPENROUTER_FALLBACKS || 'google/gemini-2.5-flash-lite')
+    .split(',').map(m => m.trim()).filter(Boolean);
+  const raw = await callProvider(provider, CHAT_SYSTEM, userContent, maxTokens, model, fallbacks);
   return stripEmDashes(String(raw || '').trim());
 }
 

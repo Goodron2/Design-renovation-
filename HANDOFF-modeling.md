@@ -27,10 +27,8 @@ GitHub default branch: `claude/renovation-cost-estimator-Z3bQw`. Work there, com
 
 ## Task
 
-A. **Fix the chat** (small, do first): make `ai.js` build every OpenRouter URL from
-   `process.env.OPENROUTER_BASE_URL` (default `https://openrouter.ai/api/v1`), add the variable to
-   `.env.example`, and log once when the chat falls back to the mock so it is no longer silent.
-   The operator adds the value to the server `.env`. Check with one real `/api/chat` call on the server.
+A. ~~Fix the chat~~: done 2026-10-10 by Claude (`OPENROUTER_BASE_URL` = goodron relay, fallback model
+   `CHAT_OPENROUTER_FALLBACKS`). Skip it.
 
 B. **Bring modeling back into `/calculator`**, merged with the current `room3d.js` viewer:
    - 2D plan tab: rooms placed side by side as one apartment, drag/snap, non-rectangular rooms
@@ -58,7 +56,6 @@ B. **Bring modeling back into `/calculator`**, merged with the current `room3d.j
 
 ## Done when
 
-- `/api/chat` answers from the model (not the mock) on the live site.
 - On a phone-width screen a user can draw a two-room apartment with a non-rectangular room, add a door,
   a window and a sofa, switch to 3D, see a price, save, and open the share link.
 - An old saved project still opens.
