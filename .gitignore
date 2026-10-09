@@ -35,3 +35,6 @@ build/
 tmp/
 temp/
 *.tmp
+
+# Generated article covers (production data, not code)
+public/uploads/

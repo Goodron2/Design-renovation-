@@ -124,6 +124,7 @@ function checkAdmin(req, res, next) {
 
 // Middleware
 app.use(express.json());
+app.use(require('./scheduler-adapter')); // content-scheduler standardized API
 
 // Apply rate limiting to all routes
 app.use(rateLimit(200, 15 * 60 * 1000)); // 200 requests per 15 minutes
